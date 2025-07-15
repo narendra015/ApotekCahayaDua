@@ -4,114 +4,224 @@
     <meta charset="UTF-8">
     <title>Nota Penjualan</title>
     <style>
+        @page {
+            size: 58mm auto;
+            margin: 0;
+        }
+
+        * {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+        }
+
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 15px;
+            background: #f4f4f4;
+        }
+
+        .receipt {
+            width: 100%;
+            max-width: 300px;
+            background: white;
+            padding: 10px;
         }
 
         .header {
-            text-align: center;
-            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
         }
 
         .header img {
-            width: 40px;
-            margin-right: 7px;
-            vertical-align: middle;
+            width: 35px;
+            height: auto;
+            margin-right: 10px;
         }
 
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
-            font-weight: bold;
-            text-transform: uppercase;
-            display: inline-block;
-            vertical-align: middle;
+        .header .title {
+            text-align: left;
         }
 
-        .header h4 {
-            margin: 5px 0 0 0;
-            font-weight: normal;
+        .header .title h1 {
             font-size: 14px;
+            margin: 0;
+            text-transform: uppercase;
         }
 
-        .double-line {
-            border-top: 3px solid black;
-            border-bottom: 1px solid black;
-            margin: 10px 0 20px 0;
+        .header .title p {
+            font-size: 10px;
+            margin: 2px 0;
         }
 
-        table {
+        .separator {
+            border-top: 1px dashed #000;
+            margin: 8px 0;
+        }
+
+        .info {
+            margin-bottom: 5px;
+        }
+
+        .info table {
+            width: 100%;
+        }
+
+        .info td {
+            padding: 2px 0;
+            vertical-align: top;
+        }
+
+        .info td:first-child {
+            width: 70px;
+        }
+
+        table.items {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 10px;
+            margin-top: 5px;
         }
 
-        th, td {
-            border: 1px solid #ccc;
-            padding: 8px;
-            text-align: left;
-            text-align: center; 
+        .items td {
+            padding: 2px 0;
+            font-size: 12px;
         }
 
-        th {
-            background-color: #eee;
+        .items td:nth-child(2) {
+            text-align: right;
         }
 
-        .total-row td {
+        .totals {
+            margin-top: 5px;
+            width: 100%;
+        }
+
+        .totals td {
             font-weight: bold;
+            padding: 3px 0;
         }
 
+        .totals td:first-child {
+            text-align: left;
+        }
+
+        .totals td:last-child {
+            text-align: right;
+        }
+
+        .footer {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 11px;
+        }
+
+        .print-button-container {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .print-button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        @media print {
+            .print-button-container {
+                display: none;
+            }
+
+            body {
+                padding: 0;
+                background: none;
+            }
+
+            .receipt {
+                box-shadow: none;
+                padding: 0;
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
 
-    {{-- Header --}}
+{{-- STRUK NOTA --}}
+<div class="receipt">
+    {{-- HEADER --}}
     <div class="header">
         <img src="{{ asset('images/logo-dashboard2.png') }}" alt="Logo Apotek">
-        <h1>Apotek Cahaya Dua</h1>
-        <h4>
-            Jl. Pasukan Ronggolawe No.9, Wonosobo Timur, Wonosobo Tim.,<br>
-            Kec. Wonosobo, Kabupaten Wonosobo, Jawa Tengah 56311
-        </h4>
+        <div class="title">
+            <h1>Apotek Cahaya Dua</h1>
+            <p>Jl. Pasukan Ronggolawe No.9</p>
+            <p>Wonosobo Timur, Jawa Tengah</p>
+        </div>
     </div>
 
-    <div class="double-line"></div>
+    <div class="separator"></div>
 
-    {{-- Info Transaksi --}}
-    <p><strong>Tanggal:</strong> {{ \Carbon\Carbon::parse($transaction->date)->translatedFormat('d F Y') }}</p>
-    <p><strong>Pelanggan:</strong> {{ $transaction->customer->name }}</p>
-
-    {{-- Tabel Produk --}}
-    <table>
-        <thead>
+    {{-- INFO TRANSAKSI --}}
+    <div class="info">
+        <table>
             <tr>
-                <th>Produk</th>
-                <th>Jumlah</th>
-                <th>Harga</th>
-                <th>Total</th>
+                <td><strong>Tanggal</strong></td>
+                <td>: {{ \Carbon\Carbon::parse($transaction->date)->translatedFormat('d F Y') }}</td>
             </tr>
-        </thead>
+            <tr>
+                <td><strong>Pelanggan</strong></td>
+                <td>: {{ $transaction->customer->name }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="separator"></div>
+
+    {{-- DAFTAR PRODUK --}}
+    <table class="items">
         <tbody>
             @foreach ($transaction->details as $detail)
                 <tr>
-                    <td>{{ $detail->product->name }}</td>
-                    <td>{{ $detail->quantity }}</td>
-                    <td>Rp {{ number_format($detail->price, 0, '', '.') }}</td>
-                    <td>Rp {{ number_format($detail->total, 0, '', '.') }}</td>
+                    <td colspan="2">{{ $detail->product->name }}</td>
                 </tr>
+                <tr>
+                    <td>{{ $detail->quantity }} x Rp{{ number_format($detail->price, 0, '', '.') }}</td>
+                    <td>Rp{{ number_format($detail->total, 0, '', '.') }}</td>
+                </tr>
+                <tr><td colspan="2">&nbsp;</td></tr>
             @endforeach
-            <tr class="total-row">
-                <td colspan="3">Total</td>
-                <td>Rp {{ number_format($transaction->details->sum('total'), 0, '', '.') }}</td>
-            </tr>
         </tbody>
     </table>
 
-    {{-- Auto Print --}}
-    <script>
-        window.print();
-    </script>
+    <div class="separator"></div>
+
+    {{-- TOTAL --}}
+    <table class="totals">
+        <tr>
+            <td>Total</td>
+            <td>Rp{{ number_format($transaction->details->sum('total'), 0, '', '.') }}</td>
+        </tr>
+    </table>
+
+    <div class="separator"></div>
+
+    {{-- FOOTER --}}
+    <div class="footer">
+        <p>-- Terima Kasih --</p>
+        <p>Barang yang sudah dibeli tidak dapat dikembalikan</p>
+    </div>
+</div>
+
+{{-- BUTTON CETAK --}}
+<div class="print-button-container">
+    <button class="print-button" onclick="window.print()">Cetak Nota</button>
+</div>
 
 </body>
 </html>
