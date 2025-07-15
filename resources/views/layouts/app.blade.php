@@ -5,11 +5,11 @@
     {{-- Required meta tags --}}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Aplikasi POS Apotek dengan Laravel 11">
+    <meta name="description" content="Apotek Cahaya Dua">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     {{-- Title --}}
-    <title>Aplikasi POS Apotek dengan Laravel 11</title>
+    <title>Apotek Cahaya Dua</title>
 
     {{-- Favicon icon --}}
     <link rel="shortcut icon" href="{{ asset('images/favicon.ico') }}" type="image/x-icon">
