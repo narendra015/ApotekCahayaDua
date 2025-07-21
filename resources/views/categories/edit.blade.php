@@ -1,6 +1,6 @@
 <x-app-layout>
     {{-- Page Title --}}
-    <x-page-title>Edit Kategori Produk</x-page-title>
+    <x-page-title>Ubah Kategori Produk</x-page-title>
 
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
         {{-- form edit data --}}
