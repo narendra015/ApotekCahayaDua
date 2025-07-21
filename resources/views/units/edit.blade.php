@@ -1,6 +1,6 @@
 <x-app-layout>
     {{-- Judul Halaman --}}
-    <x-page-title>Ubah Satuan Produk</x-page-title>
+    <x-page-title>Edit Satuan Produk</x-page-title>
 
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
         {{-- Form Ubah Data --}}
