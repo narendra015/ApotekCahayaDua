@@ -1,6 +1,6 @@
 <x-app-layout>
     {{-- Judul Halaman --}}
-    <x-page-title>Pembelian</x-page-title>
+    <x-page-title>Transaksi Pembelian</x-page-title>
 
     <div class="bg-white rounded-2 shadow-sm p-4 mb-4">
         <div class="row">
