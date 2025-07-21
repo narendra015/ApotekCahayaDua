@@ -1,6 +1,6 @@
 <x-app-layout>
     {{-- Judul Halaman --}}
-    <x-page-title>Ubah Penjualan</x-page-title>
+    <x-page-title>Edit Penjualan</x-page-title>
 
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
         <form action="{{ route('transactions.update', $transaction->id) }}" method="POST">
