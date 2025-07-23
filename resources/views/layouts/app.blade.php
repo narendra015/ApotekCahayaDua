@@ -5,11 +5,11 @@
     {{-- Required meta tags --}}
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Apotek Cahaya Dua">
+    <meta name="description" content="Apotek Cahaya 2">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     {{-- Title --}}
-    <title>Apotek Cahaya Dua</title>
+    <title>Apotek Cahaya 2</title>
 
     {{-- Favicon icon --}}
     <link rel="shortcut icon" href="{{ asset('images/favicon.ico') }}" type="image/x-icon">
