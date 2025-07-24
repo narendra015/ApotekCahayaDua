@@ -1,6 +1,6 @@
 <x-app-layout>
     {{-- Judul Halaman --}}
-    <x-page-title>Ubah Pemasok Produk</x-page-title>
+    <x-page-title>Edit Pemasok Produk</x-page-title>
 
     <div class="bg-white rounded-3 shadow-sm p-4 mb-5">
         {{-- Form untuk Mengubah Pemasok --}}
