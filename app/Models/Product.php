@@ -11,62 +11,125 @@ class Product extends Model
 {
     use HasFactory;
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array
-     */
+    // ================================
+    //        MASS ASSIGNABLE
+    // ================================
     protected $fillable = [
-        'category_id', 
-        'unit_id', 
-        'supplier_id', // Add supplier_id to fillable
-        'name', 
-        'description', 
-        'price', 
-        'expired_date', 
-        'qty', 
-        'image'
+        'category_id',
+        'unit_id',
+        'supplier_id',
+        'name',
+        'description',
+        'price',
+        'expired_date',
+        'qty',
+        'image',
     ];
 
-    /**
-     * Cast attributes to native types.
-     *
-     * @var array
-     */
+    // ================================
+    //            CASTING
+    // ================================
     protected $casts = [
-        'price' => 'decimal:2',   // Menjadikan price sebagai decimal dengan 2 angka di belakang koma
-        'expired_date' => 'datetime', // Mengubah expired_date ke tipe datetime
+        'price' => 'decimal:2',
+        'expired_date' => 'datetime',
     ];
 
-    /**
-     * Get the category that owns the product.
-     */
+    // ================================
+    //         RELATIONSHIPS
+    // ================================
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * Get the unit that owns the product.
-     */
     public function unit(): BelongsTo
     {
         return $this->belongsTo(Unit::class);
     }
 
-    /**
-     * Get the supplier that owns the product.
-     */
     public function supplier(): BelongsTo
     {
-        return $this->belongsTo(Supplier::class); // Define the relationship with Supplier
+        return $this->belongsTo(Supplier::class);
     }
 
-    /**
-     * Get the transactions for the product.
-     */
     public function transactions(): HasMany
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    public function stockHistories(): HasMany
+    {
+        return $this->hasMany(ProductStockHistory::class)->orderBy('created_at', 'asc');
+    }
+
+    // ================================
+    //        LOGIKA FIFO STOK
+    // ================================
+
+    /**
+     * Ambil histori stok tertua (untuk tampilan FIFO).
+     */
+    public function oldestStock()
+    {
+        return $this->stockHistories()->orderBy('created_at', 'asc')->first();
+    }
+
+    /**
+     * Perbarui harga & tanggal kadaluarsa utama dari stok yang masih tersedia (FIFO).
+     */
+    public function updateProductWithFIFO(): void
+    {
+        $nextStock = $this->stockHistories()
+            ->where('qty', '>', 0)
+            ->orderBy('expired_date')
+            ->first();
+
+        if ($nextStock) {
+            $this->price = $nextStock->price;
+            $this->expired_date = $nextStock->expired_date;
+        } else {
+            $this->price = 0;
+            $this->expired_date = null;
+        }
+
+        $this->save();
+    }
+
+    /**
+     * Kurangi stok produk sesuai urutan FIFO.
+     *
+     * @param int $qtyToReduce Jumlah stok yang akan dikurangi
+     */
+    public function reduceStock(int $qtyToReduce): void
+    {
+        if ($qtyToReduce > $this->qty) {
+            throw new \Exception('Stok tidak mencukupi!');
+        }
+
+        $remainingQty = $qtyToReduce;
+
+        $stocks = $this->stockHistories()
+            ->where('qty', '>', 0)
+            ->orderBy('expired_date')
+            ->get();
+
+        foreach ($stocks as $stock) {
+            if ($remainingQty <= 0) break;
+
+            $deductQty = min($stock->qty, $remainingQty);
+            $stock->qty -= $deductQty;
+            $stock->save();
+
+            $remainingQty -= $deductQty;
+        }
+
+        // Update stok total di tabel produk
+        $this->qty -= $qtyToReduce;
+        if ($this->qty < 0) $this->qty = 0;
+        $this->save();
+
+        // Update price dan expired dari batch stok selanjutnya (FIFO)
+        $this->updateProductWithFIFO();
     }
 }

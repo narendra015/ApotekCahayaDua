@@ -2,170 +2,160 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Category;
 use App\Models\Product;
+use App\Models\Category;
 use App\Models\Unit;
-use App\Models\Supplier;  // Pastikan Anda sudah memiliki model Supplier
-use Illuminate\Http\RedirectResponse;
+use App\Models\Supplier;
+use App\Models\ProductStockHistory;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\View\View;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\Storage;
 
 class ProductController extends Controller
 {
-    /**
-     * Menampilkan daftar produk.
-     */
     public function index(Request $request): View
     {
-        $pagination = 10; // Tentukan jumlah produk per halaman
-    
-        // Query untuk mengambil produk dengan pencarian dan relasi yang diperlukan
-        $products = Product::select('id', 'category_id', 'unit_id', 'supplier_id', 'name', 'price', 'image', 'expired_date', 'qty')
-            ->with(['category:id,name', 'unit:id,name', 'supplier:id,name']) // Pastikan relasi supplier ada
+        $products = Product::with([
+                'category:id,name',
+                'unit:id,name',
+                'supplier:id,name',
+                'stockHistories' => function ($query) {
+                    $query->orderBy('expired_date');
+                }
+            ])
             ->when($request->search, function ($query) use ($request) {
-                $query->where('name', 'LIKE', '%' . $request->search . '%')
-                    ->orWhere('price', 'LIKE', '%' . $request->search . '%')
-                    ->orWhereHas('category', function ($query) use ($request) {
-                        $query->where('name', 'LIKE', '%' . $request->search . '%');  // Pencarian berdasarkan nama kategori
-                    });
+                $search = $request->search;
+                $query->where('name', 'LIKE', "%{$search}%")
+                    ->orWhereHas('category', fn($q) => $q->where('name', 'LIKE', "%{$search}%"));
             })
-            ->latest()  // Urutkan berdasarkan yang terbaru
-            ->paginate($pagination)  // Paginasi dengan jumlah produk per halaman
-            ->withQueryString(); // Mempertahankan parameter pencarian di URL
-    
-        // Menghitung nomor urut untuk setiap halaman
-        return view('products.index', compact('products'))
-            ->with('i', ($request->input('page', 1) - 1) * $pagination);
-    }
-    
+            ->latest()
+            ->paginate(10)
+            ->withQueryString();
 
-    /**
-     * Menampilkan form untuk menambahkan produk.
-     */
+        return view('products.index', compact('products'))
+            ->with('i', ($request->input('page', 1) - 1) * 10);
+    }
+
     public function create(): View
     {
         $categories = Category::select('id', 'name')->get();
         $units = Unit::select('id', 'name')->get();
-        $suppliers = Supplier::select('id', 'name')->get();  // Menambahkan data supplier
+        $suppliers = Supplier::select('id', 'name')->get();
+
         return view('products.create', compact('categories', 'units', 'suppliers'));
     }
 
-    /**
-     * Menyimpan produk baru.
-     */
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'unit_id'     => 'required|exists:units,id',
-            'supplier_id' => 'required|exists:suppliers,id',  // Validasi untuk supplier_id
-            'name'        => 'required|string',
-            'description' => 'required|string',
-            'price'       => 'required|string',
-            'expired_date'=> 'nullable|date',
-            'qty'         => 'required|integer|min:1',
-            'image'       => 'nullable|image|mimes:jpeg,jpg,png|max:1024'
+            'category_id'   => 'required|exists:categories,id',
+            'unit_id'       => 'required|exists:units,id',
+            'supplier_id'   => 'required|exists:suppliers,id',
+            'name'          => 'required|string',
+            'description'   => 'required|string',
+            'price'         => 'required|string',
+            'qty'           => 'required|integer|min:1',
+            'expired_date'  => 'required|date|after_or_equal:today',
+            'image'         => 'nullable|image|mimes:jpeg,jpg,png|max:1024'
         ]);
 
-        // Proses upload image jika ada
-        $imageName = $request->hasFile('image') ? $request->file('image')->store('public/products') : null;
+        $imageName = $request->hasFile('image')
+            ? $request->file('image')->store('public/products')
+            : null;
 
-        // Menyimpan produk ke database
-        Product::create([
+        // Simpan produk utama
+        $product = Product::create([
             'category_id' => $request->category_id,
             'unit_id'     => $request->unit_id,
-            'supplier_id' => $request->supplier_id,  // Menyimpan supplier_id
+            'supplier_id' => $request->supplier_id,
             'name'        => $request->name,
             'description' => $request->description,
-            'price'       => (float) str_replace(['.', ','], ['', '.'], $request->price),
             'image'       => $imageName ? basename($imageName) : null,
-            'expired_date'=> $request->expired_date,
-            'qty'         => $request->qty,
+            // Diatur ke default
+            'price'       => 0,
+            'qty'         => 0,
+            'expired_date'=> null,
         ]);
 
-        return redirect()->route('products.index')->with(['success' => 'Product added successfully!']);
+        // Konversi harga dari format Indonesia
+        $parsedPrice = (float) str_replace(['.', ','], ['', '.'], $request->price);
+
+        // Simpan sebagai batch pertama
+        ProductStockHistory::create([
+            'product_id'   => $product->id,
+            'price'        => $parsedPrice,
+            'qty'          => $request->qty,
+            'expired_date' => $request->expired_date,
+        ]);
+
+        // Perbarui produk utama untuk mencerminkan batch pertama (FIFO)
+        $product->updateProductWithFIFO();
+
+        return redirect()->route('products.index')->with('success', 'Produk berhasil ditambahkan.');
     }
 
-    /**
-     * Menampilkan form untuk mengedit produk.
-     */
     public function edit($id): View
     {
         $product = Product::findOrFail($id);
         $categories = Category::select('id', 'name')->get();
         $units = Unit::select('id', 'name')->get();
-        $suppliers = Supplier::select('id', 'name')->get();  // Mengambil data supplier
+        $suppliers = Supplier::select('id', 'name')->get();
+
         return view('products.edit', compact('product', 'categories', 'units', 'suppliers'));
     }
 
-    /**
-     * Memperbarui produk yang ada.
-     */
     public function update(Request $request, $id): RedirectResponse
     {
         $request->validate([
             'category_id' => 'required|exists:categories,id',
             'unit_id'     => 'required|exists:units,id',
-            'supplier_id' => 'required|exists:suppliers,id',  // Validasi untuk supplier_id
+            'supplier_id' => 'required|exists:suppliers,id',
             'name'        => 'required',
             'description' => 'required',
-            'price'       => 'required|string',
             'expired_date'=> 'nullable|date',
             'image'       => 'nullable|image|mimes:jpeg,jpg,png|max:1024'
         ]);
 
         $product = Product::findOrFail($id);
 
-        // Cek dan update gambar jika ada yang diunggah
         if ($request->hasFile('image')) {
             $imageName = $request->file('image')->store('public/products');
             if ($product->image) {
-                Storage::delete('public/products/' . $product->image); // Hapus gambar lama
+                Storage::delete('public/products/' . $product->image);
             }
-            $product->update(['image' => basename($imageName)]);
+            $product->image = basename($imageName);
         }
 
-        // Update data produk
         $product->update([
             'category_id' => $request->category_id,
             'unit_id'     => $request->unit_id,
-            'supplier_id' => $request->supplier_id,  // Update supplier_id
+            'supplier_id' => $request->supplier_id,
             'name'        => $request->name,
             'description' => $request->description,
-            'price'       => (float) str_replace(['.', ','], ['', '.'], $request->price),
-            'expired_date'=> $request->expired_date,
         ]);
 
-        return redirect()->route('products.index')->with(['success' => 'Product updated successfully!']);
+        return redirect()->route('products.index')->with('success', 'Produk berhasil diperbarui.');
     }
 
-    /**
-     * Menghapus produk.
-     */
     public function destroy($id): RedirectResponse
     {
-        // Ambil data produk berdasarkan ID
         $product = Product::findOrFail($id);
-
-        // Hapus gambar produk jika ada
-        Storage::delete('public/products/' . $product->image);
-
-        // Hapus produk dari database
+        if ($product->image) {
+            Storage::delete('public/products/' . $product->image);
+        }
+        $product->stockHistories()->delete();
         $product->delete();
 
-        // Redirect kembali ke halaman index dengan pesan sukses
-        return redirect()->route('products.index')->with(['success' => 'The product has been deleted!']);
+        return redirect()->route('products.index')->with('success', 'Produk berhasil dihapus.');
     }
 
-    /**
-     * Menampilkan detail produk.
-     */
     public function show($id): View
     {
-        $product = Product::with('category', 'unit', 'supplier')->findOrFail($id);  // Menambahkan relasi supplier
-        return view('products.show', compact('product'));
+        $product = Product::with(['category', 'unit', 'supplier', 'stockHistories'])->findOrFail($id);
+        $oldestStock = $product->oldestStock();
+
+        return view('products.show', compact('product', 'oldestStock'));
     }
 
     public function getBySupplier($supplierId)
@@ -174,4 +164,30 @@ class ProductController extends Controller
         return response()->json($products);
     }
 
+    public function addStock(Product $product): View
+    {
+        return view('products.add-stock', compact('product'));
+    }
+
+    public function storeStock(Request $request, Product $product): RedirectResponse
+    {
+        $request->validate([
+            'price'         => 'required|string',
+            'qty'           => 'required|integer|min:1',
+            'expired_date'  => 'required|date|after_or_equal:today',
+        ]);
+
+        $parsedPrice = (float) str_replace(['.', ','], ['', '.'], $request->price);
+
+        ProductStockHistory::create([
+            'product_id'   => $product->id,
+            'price'        => $parsedPrice,
+            'qty'          => $request->qty,
+            'expired_date' => $request->expired_date,
+        ]);
+
+        $product->updateProductWithFIFO();
+
+        return redirect()->route('products.show', $product->id)->with('success', 'Stok berhasil ditambahkan.');
+    }
 }

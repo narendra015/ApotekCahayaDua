@@ -4,19 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Product;
+use App\Models\ProductStockHistory;
 use App\Models\Transaction;
-use App\Models\TransactionDetail;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\Rule;
 
 class TransactionController extends Controller
 {
-    /**
-     * Menampilkan daftar transaksi.
-     */
     public function index(Request $request)
     {
         $pagination = 10;
@@ -25,12 +21,8 @@ class TransactionController extends Controller
         $transactions = Transaction::with(['customer', 'details.product'])
             ->when($search, function ($query) use ($search) {
                 $query->where('date', 'LIKE', '%' . $search . '%')
-                    ->orWhereHas('customer', function ($q) use ($search) {
-                        $q->where('name', 'LIKE', '%' . $search . '%');
-                    })
-                    ->orWhereHas('details.product', function ($q) use ($search) {
-                        $q->where('name', 'LIKE', '%' . $search . '%');
-                    });
+                    ->orWhereHas('customer', fn($q) => $q->where('name', 'LIKE', '%' . $search . '%'))
+                    ->orWhereHas('details.product', fn($q) => $q->where('name', 'LIKE', '%' . $search . '%'));
             })
             ->latest()
             ->paginate($pagination);
@@ -39,80 +31,105 @@ class TransactionController extends Controller
             ->with('i', ($request->input('page', 1) - 1) * $pagination);
     }
 
-    /**
-     * Menampilkan form tambah transaksi.
-     */
     public function create()
     {
         $customers = Customer::all(['id', 'name']);
-        $products = Product::where('qty', '>', 0)->get(['id', 'name', 'price', 'qty']);
+
+        // Ambil produk yang memiliki stok dari batch (bukan dari kolom `qty` di tabel products)
+        $products = Product::with(['stockHistories' => function ($q) {
+            $q->where('qty', '>', 0)->orderBy('expired_date');
+        }])
+        ->whereHas('stockHistories', function ($q) {
+            $q->where('qty', '>', 0);
+        })
+        ->get();
+
+        // Hitung harga FIFO (batch paling awal)
+        foreach ($products as $product) {
+            $firstStock = $product->stockHistories->first();
+            $product->fifo_price = $firstStock?->price ?? 0;
+        }
 
         return view('transactions.create', compact('customers', 'products'));
     }
 
-    /**
-     * Menyimpan transaksi baru.
-     */
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
             'date' => 'required|date',
             'customer_id' => 'required|exists:customers,id',
+            'paid_amount' => 'required|numeric|min:0',
             'products' => 'required|array|min:1',
-            'products.*.product_id' => ['required', 'exists:products,id', 'distinct'],
+            'products.*.product_id' => 'required|exists:products,id|distinct',
             'products.*.quantity' => 'required|integer|min:1',
         ]);
 
         DB::beginTransaction();
         try {
-            $productIds = collect($request->products)->pluck('product_id')->toArray();
-            $productData = Product::whereIn('id', $productIds)->get()->keyBy('id');
-
-            foreach ($request->products as $product) {
-                if (!isset($productData[$product['product_id']])) {
-                    throw new \Exception("Produk tidak ditemukan.");
-                }
-                if ($productData[$product['product_id']]->qty < $product['quantity']) {
-                    throw new \Exception("Stok produk '{$productData[$product['product_id']]->name}' tidak cukup!");
-                }
-            }
-
             $transaction = Transaction::create([
                 'date' => $request->date,
                 'customer_id' => $request->customer_id,
                 'total_amount' => 0,
+                'paid_amount' => $request->paid_amount,
+                'change_amount' => 0,
             ]);
 
             $totalAmount = 0;
-            foreach ($request->products as $product) {
-                $productInstance = $productData[$product['product_id']];
-                $subtotal = $productInstance->price * $product['quantity'];
 
-                $transaction->details()->create([
-                    'product_id' => $productInstance->id,
-                    'quantity' => $product['quantity'],
-                    'price' => $productInstance->price,
-                    'total' => $subtotal,
-                ]);
+            foreach ($request->products as $item) {
+                $product = Product::findOrFail($item['product_id']);
+                $qtyNeeded = $item['quantity'];
+                $remaining = $qtyNeeded;
 
-                $productInstance->decrement('qty', $product['quantity']);
-                $totalAmount += $subtotal;
+                $stockBatches = $product->stockHistories()
+                    ->where('qty', '>', 0)
+                    ->orderBy('expired_date')
+                    ->get();
+
+                foreach ($stockBatches as $batch) {
+                    if ($remaining <= 0) break;
+
+                    $usedQty = min($batch->qty, $remaining);
+                    $roundedPrice = $this->roundToNearest100($batch->price);
+
+                    $transaction->details()->create([
+                        'product_id' => $product->id,
+                        'quantity' => $usedQty,
+                        'price' => $roundedPrice,
+                        'total' => $usedQty * $roundedPrice,
+                    ]);
+
+                    $batch->decrement('qty', $usedQty);
+                    $totalAmount += $usedQty * $roundedPrice;
+                    $remaining -= $usedQty;
+                }
+
+                if ($remaining > 0) {
+                    throw new \Exception("Stok tidak cukup untuk produk: {$product->name}");
+                }
+
+                $product->decrement('qty', $qtyNeeded);
+                $product->updateProductWithFIFO();
             }
 
-            $transaction->update(['total_amount' => $totalAmount]);
+            if ($request->paid_amount < $totalAmount) {
+                throw new \Exception("Uang dibayarkan kurang dari total transaksi.");
+            }
+
+            $transaction->update([
+                'total_amount' => $totalAmount,
+                'change_amount' => $request->paid_amount - $totalAmount,
+            ]);
 
             DB::commit();
-            return redirect()->route('transactions.index')->with('success', 'Transaction saved successfully!');
+            return redirect()->route('transactions.index')->with('success', 'Transaksi berhasil disimpan!');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Transaction Error: ' . $e->getMessage());
+            Log::error('Transaction Store Error: ' . $e->getMessage());
             return redirect()->back()->with('error', 'Gagal menyimpan transaksi: ' . $e->getMessage());
         }
     }
 
-    /**
-     * Menampilkan form edit transaksi.
-     */
     public function edit($id)
     {
         $transaction = Transaction::with('details.product')->findOrFail($id);
@@ -122,9 +139,6 @@ class TransactionController extends Controller
         return view('transactions.edit', compact('transaction', 'customers', 'products'));
     }
 
-    /**
-     * Memperbarui transaksi.
-     */
     public function update(Request $request, $id): RedirectResponse
     {
         $request->validate([
@@ -133,53 +147,79 @@ class TransactionController extends Controller
             'items' => 'required|array|min:1',
             'items.*.product_id' => ['required', 'exists:products,id', 'distinct'],
             'items.*.quantity' => 'required|integer|min:1',
+            'paid_amount' => 'required|numeric|min:0',
         ]);
 
         DB::beginTransaction();
         try {
-            $transaction = Transaction::findOrFail($id);
+            $transaction = Transaction::with('details')->findOrFail($id);
 
-            // Kembalikan stok sebelum menghapus detail transaksi
             foreach ($transaction->details as $detail) {
-                Product::where('id', $detail->product_id)->increment('qty', $detail->quantity);
+                $product = $detail->product;
+                $batch = $product->stockHistories()
+                    ->where('price', $detail->price)
+                    ->orderBy('created_at', 'desc')
+                    ->first();
+
+                if ($batch) {
+                    $batch->increment('qty', $detail->quantity);
+                }
+
+                $product->increment('qty', $detail->quantity);
+                $product->updateProductWithFIFO();
             }
 
             $transaction->details()->delete();
 
             $totalAmount = 0;
-            $productIds = collect($request->items)->pluck('product_id')->toArray();
-            $productData = Product::whereIn('id', $productIds)->get()->keyBy('id');
 
             foreach ($request->items as $item) {
-                if (!isset($productData[$item['product_id']])) {
-                    throw new \Exception("Produk tidak ditemukan.");
+                $product = Product::findOrFail($item['product_id']);
+                $qtyNeeded = $item['quantity'];
+                $remaining = $qtyNeeded;
+
+                $stockBatches = $product->stockHistories()
+                    ->where('qty', '>', 0)
+                    ->orderBy('expired_date')
+                    ->get();
+
+                foreach ($stockBatches as $batch) {
+                    if ($remaining <= 0) break;
+
+                    $usedQty = min($batch->qty, $remaining);
+                    $roundedPrice = $this->roundToNearest100($batch->price);
+
+                    $transaction->details()->create([
+                        'product_id' => $product->id,
+                        'quantity' => $usedQty,
+                        'price' => $roundedPrice,
+                        'total' => $usedQty * $roundedPrice,
+                    ]);
+
+                    $batch->decrement('qty', $usedQty);
+                    $totalAmount += $usedQty * $roundedPrice;
+                    $remaining -= $usedQty;
                 }
-                if ($productData[$item['product_id']]->qty < $item['quantity']) {
-                    throw new \Exception("Stok produk '{$productData[$item['product_id']]->name}' tidak cukup!");
+
+                if ($remaining > 0) {
+                    throw new \Exception("Stok tidak cukup untuk produk: {$product->name}");
                 }
+
+                $product->decrement('qty', $qtyNeeded);
+                $product->updateProductWithFIFO();
+            }
+
+            if ($request->paid_amount < $totalAmount) {
+                throw new \Exception("Nominal yang dibayarkan kurang dari total transaksi.");
             }
 
             $transaction->update([
                 'date' => $request->date,
                 'customer_id' => $request->customer_id,
+                'total_amount' => $totalAmount,
+                'paid_amount' => $request->paid_amount,
+                'change_amount' => $request->paid_amount - $totalAmount,
             ]);
-
-            foreach ($request->items as $item) {
-                $product = $productData[$item['product_id']];
-                $subtotal = $product->price * $item['quantity'];
-
-                $transaction->details()->create([
-                    'product_id' => $product->id,
-                    'quantity' => $item['quantity'],
-                    'price' => $product->price,
-                    'total' => $subtotal,
-                ]);
-
-                $product->decrement('qty', $item['quantity']);
-                $totalAmount += $subtotal;
-            }
-
-            $transaction->update(['total_amount' => $totalAmount]);
 
             DB::commit();
             return redirect()->route('transactions.index')->with('success', 'Transaction updated successfully!');
@@ -190,35 +230,47 @@ class TransactionController extends Controller
         }
     }
 
-    /**
-     * Menghapus transaksi.
-     */
     public function destroy($id): RedirectResponse
     {
         DB::beginTransaction();
         try {
-            $transaction = Transaction::findOrFail($id);
+            $transaction = Transaction::with('details')->findOrFail($id);
 
             foreach ($transaction->details as $detail) {
-                Product::where('id', $detail->product_id)->increment('qty', $detail->quantity);
+                $product = $detail->product;
+                $batch = $product->stockHistories()
+                    ->where('price', $detail->price)
+                    ->orderBy('created_at', 'desc')
+                    ->first();
+
+                if ($batch) {
+                    $batch->increment('qty', $detail->quantity);
+                }
+
+                $product->increment('qty', $detail->quantity);
+                $product->updateProductWithFIFO();
             }
 
             $transaction->details()->delete();
             $transaction->delete();
 
             DB::commit();
-            return redirect()->route('transactions.index')->with('success', 'Transaction deleted successfully!');
+            return redirect()->route('transactions.index')->with('success', 'Transaksi berhasil dihapus!');
         } catch (\Exception $e) {
             DB::rollBack();
             return redirect()->back()->with('error', 'Gagal menghapus transaksi: ' . $e->getMessage());
         }
     }
 
-   public function print($id)
+    public function print($id)
     {
         $transaction = Transaction::with(['customer', 'details.product'])->findOrFail($id);
         return view('transactions.print', compact('transaction'));
     }
 
+    private function roundToNearest100($value)
+    {
+        return round($value / 100) * 100;
+    }
 
 }

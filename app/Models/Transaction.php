@@ -16,7 +16,13 @@ class Transaction extends Model
      *
      * @var array<int, string>
      */
-    protected $fillable = ['date', 'customer_id', 'total_amount'];
+    protected $fillable = [
+        'date',
+        'customer_id',
+        'total_amount',
+        'paid_amount',
+        'change_amount',
+    ];
 
     /**
      * Relasi ke tabel transaction_details (jika transaksi memiliki banyak produk).

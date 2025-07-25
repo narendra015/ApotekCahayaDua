@@ -13,7 +13,7 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\OrderReportController;
 use App\Http\Controllers\NotificationController;
-
+use App\Http\Controllers\ProductStockHistoryController;
 
 // Route untuk login
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');  // Menampilkan form login
@@ -77,6 +77,12 @@ Route::get('/products/{id}/edit', [ProductController::class, 'edit'])->name('pro
 Route::put('/products/{id}', [ProductController::class, 'update'])->name('products.update');  // Memperbarui produk
 Route::delete('/products/{id}', [ProductController::class, 'destroy'])->name('products.destroy');  // Menghapus produk
 Route::get('/products/by-supplier/{supplier}', [ProductController::class, 'getBySupplier']);
+// Tambah stok untuk produk tertentu
+Route::get('/products/{product}/add-stock', [ProductController::class, 'addStock'])->name('products.add-stock');
+Route::post('/products/{product}/add-stock', [ProductController::class, 'storeStock'])->name('products.store-stock');
+Route::get('/stock-histories/{history}/edit', [ProductStockHistoryController::class, 'edit'])->name('stock-histories.edit');
+Route::put('/stock-histories/{history}', [ProductStockHistoryController::class, 'update'])->name('stock-histories.update');
+Route::resource('stock-histories', ProductStockHistoryController::class);
 
 // Route untuk pelanggan (customer)
 Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');  // Menampilkan pelanggan
@@ -118,3 +124,4 @@ Route::get('/order-report/filter', [OrderReportController::class, 'filter'])->na
 Route::get('/order-report/print/{startDate}/{endDate}', [OrderReportController::class, 'print'])->name('order_report.print');
 
 Route::get('/notifications', [NotificationController::class, 'index'])->name('notifications.index');
+Route::get('/notifications/count', [NotificationController::class, 'count'])->name('notifications.count');

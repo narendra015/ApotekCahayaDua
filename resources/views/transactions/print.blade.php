@@ -4,15 +4,9 @@
     <meta charset="UTF-8">
     <title>Nota Penjualan</title>
     <style>
-        @page {
-            size: 58mm auto;
-            margin: 0;
-        }
+        @page { size: 58mm auto; margin: 0; }
 
-        * {
-            font-family: 'Courier New', Courier, monospace;
-            font-size: 12px;
-        }
+        * { font-family: 'Courier New', Courier, monospace; font-size: 12px; }
 
         body {
             display: flex;
@@ -43,10 +37,6 @@
             margin-right: 10px;
         }
 
-        .header .title {
-            text-align: left;
-        }
-
         .header .title h1 {
             font-size: 14px;
             margin: 0;
@@ -63,11 +53,7 @@
             margin: 8px 0;
         }
 
-        .info {
-            margin-bottom: 5px;
-        }
-
-        .info table {
+        .info, .totals {
             width: 100%;
         }
 
@@ -88,29 +74,21 @@
 
         .items td {
             padding: 2px 0;
-            font-size: 12px;
         }
 
         .items td:nth-child(2) {
             text-align: right;
         }
 
-        .totals {
-            margin-top: 5px;
-            width: 100%;
-        }
-
-        .totals td {
-            font-weight: bold;
-            padding: 3px 0;
-        }
-
-        .totals td:first-child {
+        .totals td.label {
             text-align: left;
+            width: 60%;
         }
 
-        .totals td:last-child {
+        .totals td.amount {
             text-align: right;
+            white-space: nowrap;
+            font-weight: bold;
         }
 
         .footer {
@@ -134,20 +112,9 @@
         }
 
         @media print {
-            .print-button-container {
-                display: none;
-            }
-
-            body {
-                padding: 0;
-                background: none;
-            }
-
-            .receipt {
-                box-shadow: none;
-                padding: 0;
-                width: 100%;
-            }
+            .print-button-container { display: none; }
+            body { padding: 0; background: none; }
+            .receipt { box-shadow: none; padding: 0; width: 100%; }
         }
     </style>
 </head>
@@ -171,8 +138,12 @@
     <div class="info">
         <table>
             <tr>
+                <td><strong>Kasir</strong></td>
+                <td>: {{ Auth::user()->name }}</td>
+            </tr>
+            <tr>
                 <td><strong>Tanggal</strong></td>
-                <td>: {{ \Carbon\Carbon::parse($transaction->date)->translatedFormat('d F Y') }}</td>
+                <td>: {{ \Carbon\Carbon::parse($transaction->date)->locale('id')->translatedFormat('d F Y') }}</td>
             </tr>
             <tr>
                 <td><strong>Pelanggan</strong></td>
@@ -191,8 +162,8 @@
                     <td colspan="2">{{ $detail->product->name }}</td>
                 </tr>
                 <tr>
-                    <td>{{ $detail->quantity }} x Rp{{ number_format($detail->price, 0, '', '.') }}</td>
-                    <td>Rp{{ number_format($detail->total, 0, '', '.') }}</td>
+                    <td>{{ $detail->quantity }} x Rp {{ number_format($detail->price, 0, '', '.') }}</td>
+                    <td>Rp {{ number_format($detail->total, 0, '', '.') }}</td>
                 </tr>
                 <tr><td colspan="2">&nbsp;</td></tr>
             @endforeach
@@ -201,11 +172,19 @@
 
     <div class="separator"></div>
 
-    {{-- TOTAL --}}
+    {{-- TOTAL, BAYAR, KEMBALI --}}
     <table class="totals">
         <tr>
-            <td>Total</td>
-            <td>Rp{{ number_format($transaction->details->sum('total'), 0, '', '.') }}</td>
+            <td class="label">Total</td>
+            <td class="amount">Rp {{ number_format($transaction->total_amount, 0, '', '.') }}</td>
+        </tr>
+        <tr>
+            <td class="label">Bayar</td>
+            <td class="amount">Rp {{ number_format($transaction->paid_amount, 0, '', '.') }}</td>
+        </tr>
+        <tr>
+            <td class="label">Kembali</td>
+            <td class="amount">Rp {{ number_format($transaction->change_amount, 0, '', '.') }}</td>
         </tr>
     </table>
 

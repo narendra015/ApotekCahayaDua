@@ -63,31 +63,12 @@
                             <div class="alert alert-danger mt-2">{{ $message }}</div>
                         @enderror
                     </div>
-
-                    {{-- Harga --}}
-                    <div class="mb-3">
-                        <label class="form-label">Harga <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <span class="input-group-text">Rp</span>
-                            <input  type="text"
-                                    name="price_display"
-                                    id="price_display"
-                                    class="form-control @error('price') is-invalid @enderror"
-                                    value="{{ number_format(old('price', $product->price), 0, ',', '.') }}"
-                                    placeholder="Masukkan harga">
-                        </div>
-                        <input type="hidden" name="price" id="price" value="{{ old('price', $product->price) }}">
-                        @error('price')
-                            <div class="alert alert-danger mt-2">{{ $message }}</div>
-                        @enderror
-                    </div>
                 </div>
 
                 <!-- Kolom Kanan -->
                 <div class="col-lg-5">
                     {{-- Pemasok & Expired --}}
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
+                        <div class="mb-3">
                             <label class="form-label">Pemasok <span class="text-danger">*</span></label>
                             <select name="supplier_id"
                                     class="form-select select2-single @error('supplier_id') is-invalid @enderror">
@@ -103,17 +84,6 @@
                                 <div class="alert alert-danger mt-2">{{ $message }}</div>
                             @enderror
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Tanggal Kedaluwarsa <span class="text-danger">*</span></label>
-                            <input type="date" name="expired_date"
-                                   class="form-control @error('expired_date') is-invalid @enderror"
-                                   value="{{ old('expired_date', $product->expired_date->format('Y-m-d')) }}">
-                            @error('expired_date')
-                                <div class="alert alert-danger mt-2">{{ $message }}</div>
-                            @enderror
-                        </div>
-                    </div>
-
                     {{-- Gambar --}}
                     <div class="mb-3">
                         <label class="form-label">Gambar <span class="text-danger">*</span></label>

@@ -81,14 +81,12 @@
                         <li class="nav-item me-3">
                             <a href="{{ route('notifications.index') }}" class="nav-link position-relative">
                                 <i class="ti ti-bell fs-5"></i>
-                                @if(($totalNotification ?? 0) > 0)
-                                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
-                                        {{ $totalNotification }}
-                                    </span>
-                                @endif
+                                <span id="notification-badge"
+                                    class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">
+                                    0
+                                </span>
                             </a>
-                        </li>
-                        
+                        </li>          
                         {{-- User --}}
                         <li class="nav-item">
                             @auth
@@ -140,3 +138,24 @@
         </button>
     </div>
 </nav>
+<script>
+    function updateNotificationCount() {
+        fetch("{{ route('notifications.count') }}")
+            .then(response => response.json())
+            .then(data => {
+                const badge = document.getElementById('notification-badge');
+                if (data.total > 0) {
+                    badge.textContent = data.total;
+                    badge.classList.remove('d-none');
+                } else {
+                    badge.classList.add('d-none');
+                }
+            })
+            .catch(err => console.error('Gagal ambil notifikasi:', err));
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+        updateNotificationCount();
+        setInterval(updateNotificationCount, 60000); // 60 detik sekali
+    });
+</script>
