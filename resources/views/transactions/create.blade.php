@@ -90,6 +90,7 @@
         </form>
     </div>
 
+    <!-- Select2 -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet"/>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -116,7 +117,6 @@
         const formatNumber = n => new Intl.NumberFormat('id-ID').format(Number(n) || 0);
         const parseNumber = s => parseFloat((s || '0').toString().replace(/\./g,'')) || 0;
         const roundToNearest = (value, nearest = 100) => Math.round(value / nearest) * nearest;
-
         const formatRibuan = angka => new Intl.NumberFormat('id-ID').format(angka || 0);
         const cleanAngka = str => parseFloat((str || '').toString().replace(/\./g,'')) || 0;
 
@@ -144,13 +144,12 @@
             const row = `
             <tr>
                 <td>
-                    <select name="products[${itemIndex}][product_id]"
-                            class="form-control product-select select2-product" required>
+                    <select name="products[${itemIndex}][product_id]" class="form-control product-select select2-product" required>
                         <option></option>
                         @foreach($products as $product)
                             <option value="{{ $product->id }}"
                                     data-price="{{ $product->fifo_price }}"
-                                    data-qty="{{ $product->qty }}">
+                                    data-qty="{{ $product->stockHistories->sum('qty') }}">
                                 {{ $product->name }}
                             </option>
                         @endforeach
@@ -178,7 +177,7 @@
             const opt = this.selectedOptions[0];
             const $row = $(this).closest('tr');
             const priceRaw = parseNumber(opt?.dataset.price ?? 0);
-            const stock = opt?.dataset.qty ?? 0;
+            const stock = parseInt(opt?.dataset.qty ?? 0);
 
             const roundedPrice = roundToNearest(priceRaw, 100);
             $row.find('.price-input').val(formatNumber(roundedPrice));
