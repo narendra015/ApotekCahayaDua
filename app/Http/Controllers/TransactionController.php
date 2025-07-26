@@ -231,36 +231,45 @@ class TransactionController extends Controller
     }
 
     public function destroy($id): RedirectResponse
-    {
-        DB::beginTransaction();
-        try {
-            $transaction = Transaction::with('details')->findOrFail($id);
+{
+    DB::beginTransaction();
+    try {
+        $transaction = Transaction::findOrFail($id);
 
-            foreach ($transaction->details as $detail) {
-                $product = $detail->product;
+        foreach ($transaction->details as $detail) {
+            $product = Product::find($detail->product_id);
+
+            if ($product) {
+                // Kembalikan stok utama produk
+                $product->increment('qty', $detail->quantity);
+
+                // Tambahkan kembali ke batch FIFO yang paling awal (yang seharusnya sudah dipakai sebelumnya)
                 $batch = $product->stockHistories()
-                    ->where('price', $detail->price)
-                    ->orderBy('created_at', 'desc')
+                    ->orderBy('expired_date') // FIFO: kadaluarsa paling dekat
+                    ->orderBy('created_at')   // atau waktu masuk paling awal
                     ->first();
 
                 if ($batch) {
                     $batch->increment('qty', $detail->quantity);
                 }
 
-                $product->increment('qty', $detail->quantity);
+                // Update harga & expired produk utama berdasarkan FIFO terbaru
                 $product->updateProductWithFIFO();
             }
-
-            $transaction->details()->delete();
-            $transaction->delete();
-
-            DB::commit();
-            return redirect()->route('transactions.index')->with('success', 'Transaksi berhasil dihapus!');
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return redirect()->back()->with('error', 'Gagal menghapus transaksi: ' . $e->getMessage());
         }
+
+        // Hapus detail transaksi dan transaksi
+        $transaction->details()->delete();
+        $transaction->delete();
+
+        DB::commit();
+        return redirect()->route('transactions.index')->with('success', 'Transaksi berhasil dihapus!');
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return redirect()->back()->with('error', 'Gagal menghapus transaksi: ' . $e->getMessage());
     }
+}
+
 
     public function print($id)
     {
