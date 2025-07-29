@@ -3,12 +3,20 @@
 
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
         <h3>Pembelian #{{ $order->id }}</h3>
-        <p><strong>Supplier:</strong> {{ $order->supplier->name }}</p>
-        @php
-            \Carbon\Carbon::setLocale('id');
-        @endphp
-        <p><strong>Tanggal Pembelian:</strong> {{ \Carbon\Carbon::parse($order->order_date)->translatedFormat('j F Y') }}</p>
-        <p><strong>Total Harga:</strong> Rp {{ number_format($order->total_amount, 0, '', '.') }}</p>
+        <table class="table table-borderless w-auto">
+            <tr>
+                <th>Supplier</th>
+                <td>: {{ $order->supplier->name }}</td>
+            </tr>
+            <tr>
+                <th>Tanggal Pembelian</th>
+                <td>: {{ \Carbon\Carbon::parse($order->order_date)->locale('id')->isoFormat('D MMMM YYYY') }}</td>
+            </tr>
+            <tr>
+                <th>Total Harga</th>
+                <td>: Rp {{ number_format($order->total_amount, 0, '', '.') }}</td>
+            </tr>
+        </table>
 
         <h4>Detail Pembelian</h4>
         <table class="table table-bordered">

@@ -64,9 +64,9 @@
                                 <a href="{{ route('units.edit', $unit->id) }}" class="btn btn-primary btn-sm m-1" data-bs-tooltip="tooltip" data-bs-title="Ubah">
                                     <i class="ti ti-edit"></i>
                                 </a>
-                                {{-- <button type="button" class="btn btn-danger btn-sm m-1" data-bs-toggle="modal" data-bs-target="#modalDeleteUnit{{ $unit->id }}" data-bs-tooltip="tooltip" data-bs-title="Hapus">
+                                <button type="button" class="btn btn-danger btn-sm m-1" data-bs-toggle="modal" data-bs-target="#modalDeleteUnit{{ $unit->id }}" data-bs-tooltip="tooltip" data-bs-title="Hapus">
                                     <i class="ti ti-trash"></i>
-                                </button> --}}
+                                </button>
                             </td>
                         @endif
                     </tr>

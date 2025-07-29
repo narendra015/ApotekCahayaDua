@@ -84,6 +84,19 @@
         .username {
             margin-right: 35px;
         }
+        .table-info {
+            width: auto;
+            border: none;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .table-info td {
+            border: none;
+            text-align: left;
+            padding: 4px 6px;
+        }
+
     </style>
 </head>
 
@@ -99,9 +112,20 @@
     <div class="double-line"></div>
     <div>
         <h4>Detail Pesanan #{{ $order->id }}</h4>
-        <p><strong>Supplier:</strong> {{ $order->supplier->name }}</p>
-        <p><strong>Tanggal Pesanan:</strong> {{ \Carbon\Carbon::parse($order->order_date)->locale('id')->isoFormat('D MMMM YYYY') }}</p>
-        <p><strong>Total Harga:</strong> Rp {{ number_format($order->total_amount, 0, '', '.') }}</p>
+        <table class="table-info">
+            <tr>
+                <td style="width: 150px;"><strong>Supplier</strong></td>
+                <td>: {{ $order->supplier->name }}</td>
+            </tr>
+            <tr>
+                <td><strong>Tanggal Pesanan</strong></td>
+                <td>: {{ \Carbon\Carbon::parse($order->order_date)->locale('id')->isoFormat('D MMMM YYYY') }}</td>
+            </tr>
+            <tr>
+                <td><strong>Total Harga</strong></td>
+                <td>: Rp {{ number_format($order->total_amount, 0, '', '.') }}</td>
+            </tr>
+        </table>
     </div>
     <table>
         <thead>
