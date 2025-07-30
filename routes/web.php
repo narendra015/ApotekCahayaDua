@@ -82,7 +82,7 @@ Route::get('/products/{product}/add-stock', [ProductController::class, 'addStock
 Route::post('/products/{product}/add-stock', [ProductController::class, 'storeStock'])->name('products.store-stock');
 Route::get('/stock-histories/{history}/edit', [ProductStockHistoryController::class, 'edit'])->name('stock-histories.edit');
 Route::put('/stock-histories/{history}', [ProductStockHistoryController::class, 'update'])->name('stock-histories.update');
-Route::resource('stock-histories', ProductStockHistoryController::class);
+Route::delete('/stock-histories/{history}', [ProductStockHistoryController::class, 'destroy'])->name('stock-histories.destroy');
 
 // Route untuk pelanggan (customer)
 Route::get('/customers', [CustomerController::class, 'index'])->name('customers.index');  // Menampilkan pelanggan
