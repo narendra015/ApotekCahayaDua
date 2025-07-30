@@ -72,15 +72,35 @@
                                         </a>
 
                                         @if($expired || $emptyQty)
-                                            <form action="{{ route('stock-histories.destroy', $history->id) }}"
-                                                  method="POST" class="d-inline"
-                                                  onsubmit="return confirm('Yakin ingin menghapus batch stok ini?')">
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="btn btn-sm btn-danger">
-                                                    <i class="ti ti-trash"></i> Hapus
-                                                </button>
-                                            </form>
+                                            <!-- Tombol Trigger Modal -->
+                                            <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#modalDeleteStockHistory{{ $history->id }}">
+                                                <i class="ti ti-trash"></i> Hapus
+                                            </button>
+
+                                            <!-- Modal Hapus Batch Stok -->
+                                            <div class="modal fade" id="modalDeleteStockHistory{{ $history->id }}" tabindex="-1" aria-hidden="true">
+                                                <div class="modal-dialog">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <h1 class="modal-title fs-5">
+                                                                <i class="ti ti-trash me-2"></i> Hapus Riwayat Stok
+                                                            </h1>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            Apakah Anda yakin ingin menghapus batch stok dari produk <span class="fw-bold">{{ $product->name }}</span>
+                                                            dengan ID batch <span class="fw-bold">#{{ $history->id }}</span>?
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                                                            <form action="{{ route('stock-histories.destroy', $history->id) }}" method="POST">
+                                                                @csrf
+                                                                @method('DELETE')
+                                                                <button type="submit" class="btn btn-danger">Ya, hapus!</button>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         @endif
                                     </td>
                                 </tr>
