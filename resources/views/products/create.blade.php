@@ -21,21 +21,52 @@
                             <div class="alert alert-danger mt-2">{{ $message }}</div>
                         @enderror
                     </div>
+                    <div class="row">
+                        <!-- Satuan -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Satuan <span class="text-danger">*</span></label>
+                            <select name="unit_id" class="form-select select2-single @error('unit_id') is-invalid @enderror" autocomplete="off">
+                                <option selected disabled value="">- Pilih satuan -</option>
+                                @foreach ($units as $unit)
+                                    <option {{ old('unit_id') == $unit->id ? 'selected' : '' }} value="{{ $unit->id }}">{{ $unit->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('unit_id')
+                                <div class="alert alert-danger mt-2">{{ $message }}</div>
+                            @enderror
+                        </div>
+                        <!-- Golongan Obat -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Golongan Obat <span class="text-danger">*</span></label>
+                            <select id="drug_class" name="drug_class" class="form-select select2-with-image @error('drug_class') is-invalid @enderror">
+                                <option disabled {{ old('drug_class') ? '' : 'selected' }} value="">- Pilih golongan obat -</option>
 
-                    <!-- Satuan -->
-                    <div class="mb-3">
-                        <label class="form-label">Satuan <span class="text-danger">*</span></label>
-                        <select name="unit_id" class="form-select select2-single @error('unit_id') is-invalid @enderror" autocomplete="off">
-                            <option selected disabled value="">- Pilih satuan -</option>
-                            @foreach ($units as $unit)
-                                <option {{ old('unit_id') == $unit->id ? 'selected' : '' }} value="{{ $unit->id }}">{{ $unit->name }}</option>
-                            @endforeach
-                        </select>
-                        @error('unit_id')
-                            <div class="alert alert-danger mt-2">{{ $message }}</div>
-                        @enderror
+                                <option value="obat_bebas" {{ old('drug_class')=='obat_bebas' ? 'selected' : '' }}
+                                    data-image="{{ asset('images/obat-bebas.png') }}">Obat Bebas</option>
+
+                                <option value="obat_bebas_terbatas" {{ old('drug_class')=='obat_bebas_terbatas' ? 'selected' : '' }}
+                                    data-image="{{ asset('images/obat-bebas-terbatas.png') }}">Obat Bebas Terbatas</option>
+
+                                <option value="obat_keras" {{ old('drug_class')=='obat_keras' ? 'selected' : '' }}
+                                    data-image="{{ asset('images/obat-keras.png') }}">Obat Keras</option>
+
+                                <option value="obat_narkotika" {{ old('drug_class')=='obat_narkotika' ? 'selected' : '' }}
+                                    data-image="{{ asset('images/obat-narkotika.png') }}">Obat Narkotika</option>
+
+                                <option value="obat_herbal" {{ old('drug_class')=='obat_herbal' ? 'selected' : '' }}
+                                    data-image="{{ asset('images/obat-herbal.png') }}">Obat Herbal</option>
+
+                                <option value="obat_herbal_terstandar" {{ old('drug_class')=='obat_herbal_terstandar' ? 'selected' : '' }}
+                                    data-image="{{ asset('images/obat-herbal-terstandar.png') }}">Obat Herbal Terstandar</option>
+
+                                <option value="fitofarmaka" {{ old('drug_class')=='fitofarmaka' ? 'selected' : '' }}
+                                    data-image="{{ asset('images/obat-fitofarmaka.png') }}">Fitofarmaka</option>
+                            </select>
+                            @error('drug_class')
+                                <div class="alert alert-danger mt-2">{{ $message }}</div>
+                            @enderror
+                        </div>
                     </div>
-
                     <!-- Nama Produk -->
                     <div class="mb-3">
                         <label class="form-label">Nama <span class="text-danger">*</span></label>
@@ -136,6 +167,23 @@
                 previewImage.src = reader.result;
             };
             reader.readAsDataURL(event.target.files[0]);
+        });
+        $(document).ready(function() {
+            function formatState (state) {
+                if (!state.id) {
+                    return state.text;
+                }
+                var $state = $(
+                    '<span><img src="' + $(state.element).attr('data-image') + '" class="img-fluid me-2" style="width:20px; height:20px; border-radius:50%;" /> ' + state.text + '</span>'
+                );
+                return $state;
+            };
+
+            $('#drug_class').select2({
+                templateResult: formatState,
+                templateSelection: formatState,
+                width: '100%'
+            });
         });
     </script>
 </x-app-layout>

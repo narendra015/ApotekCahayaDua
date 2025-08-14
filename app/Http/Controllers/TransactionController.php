@@ -34,22 +34,7 @@ class TransactionController extends Controller
     public function create()
     {
         $customers = Customer::all(['id', 'name']);
-
-        // Ambil produk yang memiliki stok dari batch (bukan dari kolom `qty` di tabel products)
-        $products = Product::with(['stockHistories' => function ($q) {
-            $q->where('qty', '>', 0)->orderBy('expired_date');
-        }])
-        ->whereHas('stockHistories', function ($q) {
-            $q->where('qty', '>', 0);
-        })
-        ->get();
-
-        // Hitung harga FIFO (batch paling awal)
-        foreach ($products as $product) {
-            $firstStock = $product->stockHistories->first();
-            $product->fifo_price = $firstStock?->price ?? 0;
-        }
-
+        $products  = $this->getProductsForSale(); // <-- sudah termasuk drug_class, fifo_price, available_qty
         return view('transactions.create', compact('customers', 'products'));
     }
 
@@ -77,8 +62,8 @@ class TransactionController extends Controller
             $totalAmount = 0;
 
             foreach ($request->products as $item) {
-                $product = Product::findOrFail($item['product_id']);
-                $qtyNeeded = $item['quantity'];
+                $product   = Product::findOrFail($item['product_id']);
+                $qtyNeeded = (int) $item['quantity'];
                 $remaining = $qtyNeeded;
 
                 $stockBatches = $product->stockHistories()
@@ -89,19 +74,19 @@ class TransactionController extends Controller
                 foreach ($stockBatches as $batch) {
                     if ($remaining <= 0) break;
 
-                    $usedQty = min($batch->qty, $remaining);
+                    $usedQty      = min($batch->qty, $remaining);
                     $roundedPrice = $this->roundToNearest100($batch->price);
 
                     $transaction->details()->create([
                         'product_id' => $product->id,
-                        'quantity' => $usedQty,
-                        'price' => $roundedPrice,
-                        'total' => $usedQty * $roundedPrice,
+                        'quantity'   => $usedQty,
+                        'price'      => $roundedPrice,
+                        'total'      => $usedQty * $roundedPrice,
                     ]);
 
                     $batch->decrement('qty', $usedQty);
                     $totalAmount += $usedQty * $roundedPrice;
-                    $remaining -= $usedQty;
+                    $remaining   -= $usedQty;
                 }
 
                 if ($remaining > 0) {
@@ -117,7 +102,7 @@ class TransactionController extends Controller
             }
 
             $transaction->update([
-                'total_amount' => $totalAmount,
+                'total_amount'  => $totalAmount,
                 'change_amount' => $request->paid_amount - $totalAmount,
             ]);
 
@@ -132,9 +117,14 @@ class TransactionController extends Controller
 
     public function edit($id)
     {
+        // Penting: muat product pada detail agar drug_class bisa dipakai di view
         $transaction = Transaction::with('details.product')->findOrFail($id);
+
         $customers = Customer::all(['id', 'name']);
-        $products = Product::all(['id', 'name', 'price', 'qty']);
+
+        // GANTI: sebelumnya Product::all(['id','name','price','qty'])
+        // Sekarang kita ambil produk dengan stok batch + lampirkan drug_class & fifo_price
+        $products  = $this->getProductsForSale();
 
         return view('transactions.edit', compact('transaction', 'customers', 'products'));
     }
@@ -154,6 +144,7 @@ class TransactionController extends Controller
         try {
             $transaction = Transaction::with('details')->findOrFail($id);
 
+            // Kembalikan stok lama
             foreach ($transaction->details as $detail) {
                 $product = $detail->product;
                 $batch = $product->stockHistories()
@@ -161,9 +152,7 @@ class TransactionController extends Controller
                     ->orderBy('created_at', 'desc')
                     ->first();
 
-                if ($batch) {
-                    $batch->increment('qty', $detail->quantity);
-                }
+                if ($batch) $batch->increment('qty', $detail->quantity);
 
                 $product->increment('qty', $detail->quantity);
                 $product->updateProductWithFIFO();
@@ -171,11 +160,12 @@ class TransactionController extends Controller
 
             $transaction->details()->delete();
 
+            // Build ulang detail FIFO
             $totalAmount = 0;
 
             foreach ($request->items as $item) {
-                $product = Product::findOrFail($item['product_id']);
-                $qtyNeeded = $item['quantity'];
+                $product   = Product::findOrFail($item['product_id']);
+                $qtyNeeded = (int) $item['quantity'];
                 $remaining = $qtyNeeded;
 
                 $stockBatches = $product->stockHistories()
@@ -186,19 +176,19 @@ class TransactionController extends Controller
                 foreach ($stockBatches as $batch) {
                     if ($remaining <= 0) break;
 
-                    $usedQty = min($batch->qty, $remaining);
+                    $usedQty      = min($batch->qty, $remaining);
                     $roundedPrice = $this->roundToNearest100($batch->price);
 
                     $transaction->details()->create([
                         'product_id' => $product->id,
-                        'quantity' => $usedQty,
-                        'price' => $roundedPrice,
-                        'total' => $usedQty * $roundedPrice,
+                        'quantity'   => $usedQty,
+                        'price'      => $roundedPrice,
+                        'total'      => $usedQty * $roundedPrice,
                     ]);
 
                     $batch->decrement('qty', $usedQty);
                     $totalAmount += $usedQty * $roundedPrice;
-                    $remaining -= $usedQty;
+                    $remaining   -= $usedQty;
                 }
 
                 if ($remaining > 0) {
@@ -214,10 +204,10 @@ class TransactionController extends Controller
             }
 
             $transaction->update([
-                'date' => $request->date,
-                'customer_id' => $request->customer_id,
-                'total_amount' => $totalAmount,
-                'paid_amount' => $request->paid_amount,
+                'date'          => $request->date,
+                'customer_id'   => $request->customer_id,
+                'total_amount'  => $totalAmount,
+                'paid_amount'   => $request->paid_amount,
                 'change_amount' => $request->paid_amount - $totalAmount,
             ]);
 
@@ -231,45 +221,36 @@ class TransactionController extends Controller
     }
 
     public function destroy($id): RedirectResponse
-{
-    DB::beginTransaction();
-    try {
-        $transaction = Transaction::findOrFail($id);
+    {
+        DB::beginTransaction();
+        try {
+            $transaction = Transaction::with('details')->findOrFail($id);
 
-        foreach ($transaction->details as $detail) {
-            $product = Product::find($detail->product_id);
+            foreach ($transaction->details as $detail) {
+                $product = Product::find($detail->product_id);
+                if ($product) {
+                    $product->increment('qty', $detail->quantity);
 
-            if ($product) {
-                // Kembalikan stok utama produk
-                $product->increment('qty', $detail->quantity);
+                    $batch = $product->stockHistories()
+                        ->orderBy('expired_date')
+                        ->orderBy('created_at')
+                        ->first();
 
-                // Tambahkan kembali ke batch FIFO yang paling awal (yang seharusnya sudah dipakai sebelumnya)
-                $batch = $product->stockHistories()
-                    ->orderBy('expired_date') // FIFO: kadaluarsa paling dekat
-                    ->orderBy('created_at')   // atau waktu masuk paling awal
-                    ->first();
-
-                if ($batch) {
-                    $batch->increment('qty', $detail->quantity);
+                    if ($batch) $batch->increment('qty', $detail->quantity);
+                    $product->updateProductWithFIFO();
                 }
-
-                // Update harga & expired produk utama berdasarkan FIFO terbaru
-                $product->updateProductWithFIFO();
             }
+
+            $transaction->details()->delete();
+            $transaction->delete();
+
+            DB::commit();
+            return redirect()->route('transactions.index')->with('success', 'Transaksi berhasil dihapus!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->with('error', 'Gagal menghapus transaksi: ' . $e->getMessage());
         }
-
-        // Hapus detail transaksi dan transaksi
-        $transaction->details()->delete();
-        $transaction->delete();
-
-        DB::commit();
-        return redirect()->route('transactions.index')->with('success', 'Transaksi berhasil dihapus!');
-    } catch (\Exception $e) {
-        DB::rollBack();
-        return redirect()->back()->with('error', 'Gagal menghapus transaksi: ' . $e->getMessage());
     }
-}
-
 
     public function print($id)
     {
@@ -282,4 +263,26 @@ class TransactionController extends Controller
         return round($value / 100) * 100;
     }
 
+    /**
+     * Ambil produk yang siap dijual:
+     * - Punya stok batch (qty>0)
+     * - Sertakan drug_class, fifo_price, available_qty
+     */
+    private function getProductsForSale()
+    {
+        $products = Product::select('id','name','drug_class') // <-- penting: drug_class ikut
+            ->with(['stockHistories' => function ($q) {
+                $q->where('qty', '>', 0)->orderBy('expired_date');
+            }])
+            ->whereHas('stockHistories', fn($q) => $q->where('qty','>',0))
+            ->get();
+
+        // hitung fifo_price & available_qty
+        foreach ($products as $product) {
+            $firstStock           = $product->stockHistories->first();
+            $product->fifo_price  = $firstStock?->price ?? 0;
+            $product->available_qty = $product->stockHistories->sum('qty');
+        }
+        return $products;
+    }
 }

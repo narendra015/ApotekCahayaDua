@@ -6,6 +6,19 @@
             <div class="alert alert-danger">{{ session('error') }}</div>
         @endif
 
+        {{-- PERINGATAN REGULASI (dinamis, warning-only) --}}
+        <div id="legal-warning" class="alert alert-warning d-none" role="alert" aria-live="polite">
+            <div class="d-flex align-items-start">
+                <div class="me-2">⚠️</div>
+                <div>
+                    <strong>Peringatan Regulasi:</strong> Terdapat item dengan golongan obat yang
+                    <em>tidak boleh dijual bebas</em>. Penyerahan wajib melalui fasilitas kefarmasian
+                    dan <em>berdasarkan resep</em> serta pencatatan sesuai ketentuan.
+                    <ul id="legal-warning-list" class="mb-0 mt-2"></ul>
+                </div>
+            </div>
+        </div>
+
         <form action="{{ route('transactions.store') }}" method="POST">
             @csrf
             <div class="row">
@@ -42,17 +55,21 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td>
+                        <td class="product-cell">
                             <select name="products[0][product_id]" class="form-control product-select select2-product" required>
                                 <option></option>
                                 @foreach($products as $product)
                                     <option value="{{ $product->id }}"
                                             data-price="{{ $product->fifo_price }}"
-                                            data-qty="{{ $product->stockHistories->sum('qty') }}">
+                                            data-qty="{{ $product->stockHistories->sum('qty') }}"
+                                            data-drug-class="{{ $product->drug_class }}"
+                                            data-name="{{ $product->name }}">
                                         {{ $product->name }}
                                     </option>
                                 @endforeach
                             </select>
+                            {{-- Catatan regulasi per baris (muncul hanya jika produk terbatas) --}}
+                            <div class="small text-danger fw-semibold legal-note d-none"></div>
                         </td>
                         <td><input type="number" name="products[0][quantity]" class="form-control qty-input" required></td>
                         <td>
@@ -105,21 +122,55 @@
             font-size: clamp(12px, 1.4vw, 14px);
             line-height: 1.4;
         }
-        .select2-results__option {
-            font-size: clamp(12px, 1.3vw, 14px);
+        .select2-results__option { font-size: clamp(12px, 1.3vw, 14px); }
+        .select2-search__field   { font-size: clamp(12px, 1.3vw, 14px); }
+
+        /* Agar daftar peringatan rapi */
+        #legal-warning-list li { margin-left: 1rem; }
+
+        /* ===== Transformasi baris: default tengah, kalau ada catatan -> top aligned ===== */
+        #items-table tbody td { vertical-align: middle; } /* default rapi saat TIDAK ada catatan */
+
+        /* Baris yang punya catatan (JS menambah .has-legal-note ke <tr>) */
+        #items-table tbody tr.has-legal-note td {
+            vertical-align: top;
+            padding-top: .25rem;
         }
-        .select2-search__field {
-            font-size: clamp(12px, 1.3vw, 14px);
+
+        /* Catatan hanya muncul di baris yang ada kelasnya */
+        .legal-note { display: none; margin-top: .25rem; }
+        #items-table tbody tr.has-legal-note .legal-note {
+            display: block;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
     </style>
 
     <script>
-        const formatNumber = n => new Intl.NumberFormat('id-ID').format(Number(n) || 0);
-        const parseNumber = s => parseFloat((s || '0').toString().replace(/\./g,'')) || 0;
+        // ===== Util Rupiah =====
+        const formatNumber   = n => new Intl.NumberFormat('id-ID').format(Number(n) || 0);
+        const parseNumber    = s => parseFloat((s || '0').toString().replace(/\./g,'')) || 0;
         const roundToNearest = (value, nearest = 100) => Math.round(value / nearest) * nearest;
-        const formatRibuan = angka => new Intl.NumberFormat('id-ID').format(angka || 0);
-        const cleanAngka = str => parseFloat((str || '').toString().replace(/\./g,'')) || 0;
+        const formatRibuan   = angka => new Intl.NumberFormat('id-ID').format(angka || 0);
+        const cleanAngka     = str => parseFloat((str || '').toString().replace(/\./g,'')) || 0;
 
+        // ===== Golongan obat & label (dengan normalisasi) =====
+        const DRUG_CLASS_LABELS = {
+            'obat_bebas': 'Obat Bebas',
+            'obat_bebas_terbatas': 'Obat Bebas Terbatas',
+            'obat_keras': 'Obat Keras',
+            'psikotropika': 'Psikotropika',
+            'obat_narkotika': 'Narkotika',
+            'obat_herbal': 'Obat Herbal',
+            'obat_herbal_terstandar': 'Obat Herbal Terstandar',
+            'fitofarmaka': 'Fitofarmaka',
+        };
+        const RESTRICTED = new Set(['obat_keras', 'psikotropika', 'obat_narkotika']);
+        const norm = k => (k || '').toString().trim().toLowerCase().replace(/[\s-]+/g,'_');
+        const formatDrugClass = key => DRUG_CLASS_LABELS[norm(key)] || key || '-';
+
+        // ===== Select2 init =====
         function initSelect2(scope = document) {
             $(scope).find('.select2-customer').select2({
                 placeholder: 'Pilih pelanggan', allowClear: true, width: '100%',
@@ -130,30 +181,35 @@
                 language: { noResults: () => "Tidak ditemukan" }
             });
         }
-
         initSelect2();
 
+        // Pastikan event change terpicu saat memilih item di Select2
+        $(document).on('select2:select', '.product-select', function () { $(this).trigger('change'); });
         $(document).on('select2:open', function () {
             setTimeout(() => {
                 document.querySelector('.select2-container--open .select2-search__field')?.focus();
             }, 0);
         });
 
+        // ===== Baris dinamis =====
         let itemIndex = 1;
         $('#add-item').on('click', () => {
             const row = `
             <tr>
-                <td>
+                <td class="product-cell">
                     <select name="products[${itemIndex}][product_id]" class="form-control product-select select2-product" required>
                         <option></option>
                         @foreach($products as $product)
                             <option value="{{ $product->id }}"
                                     data-price="{{ $product->fifo_price }}"
-                                    data-qty="{{ $product->stockHistories->sum('qty') }}">
+                                    data-qty="{{ $product->stockHistories->sum('qty') }}"
+                                    data-drug-class="{{ $product->drug_class }}"
+                                    data-name="{{ $product->name }}">
                                 {{ $product->name }}
                             </option>
                         @endforeach
                     </select>
+                    <div class="small text-danger fw-semibold legal-note d-none"></div>
                 </td>
                 <td><input type="number" name="products[${itemIndex}][quantity]" class="form-control qty-input" required></td>
                 <td>
@@ -168,28 +224,50 @@
             itemIndex++;
         });
 
+        // ===== Hapus baris =====
         $(document).on('click', '.remove-item', function () {
             $(this).closest('tr').remove();
             calculateTotalPrice();
+            updateLegalWarning();
         });
 
+        // ===== Saat pilih produk =====
         $(document).on('change', '.product-select', function () {
-            const opt = this.selectedOptions[0];
+            const opt  = this.selectedOptions[0];
             const $row = $(this).closest('tr');
-            const priceRaw = parseNumber(opt?.dataset.price ?? 0);
-            const stock = parseInt(opt?.dataset.qty ?? 0);
 
+            if (!opt) return;
+
+            const priceRaw = parseNumber(opt.dataset.price || 0);
+            const stock    = parseInt(opt.dataset.qty || 0);
+            const dcNorm   = norm(opt.dataset.drugClass || '');
+
+            // harga (dibulatkan per Rp100 jika perlu)
             const roundedPrice = roundToNearest(priceRaw, 100);
             $row.find('.price-input').val(formatNumber(roundedPrice));
             $row.find('.hidden-price').val(roundedPrice);
             $row.find('.qty-input').attr('max', stock).val('');
             $row.find('.total-input').val('');
+
+            // catatan regulasi per baris + transformasi tampilan baris
+            const $note    = $row.find('.legal-note');
+            if (RESTRICTED.has(dcNorm)) {
+                const msg = `Perhatian: ${formatDrugClass(dcNorm)} — wajib resep & pencatatan.`;
+                $note.text(msg).attr('title', msg).removeClass('d-none');
+                $row.addClass('has-legal-note');   // aktifkan top-aligned
+            } else {
+                $note.text('').attr('title','').addClass('d-none');
+                $row.removeClass('has-legal-note'); // kembali align tengah
+            }
+
+            updateLegalWarning();
         });
 
+        // ===== Hitung total & kembalian =====
         $(document).on('input', '.qty-input', function () {
             const $row = $(this).closest('tr');
             const price = parseNumber($row.find('.hidden-price').val());
-            const qty = parseInt(this.value) || 0;
+            const qty   = parseInt(this.value) || 0;
 
             $row.find('.total-input').val(qty ? formatNumber(price * qty) : '');
             calculateTotalPrice();
@@ -206,7 +284,7 @@
 
         function calculateChange() {
             const total = parseNumber($('#total-price').val());
-            const paid = parseNumber($('#paid-amount').val());
+            const paid  = parseNumber($('#paid-amount').val());
             const change = paid - total;
             $('#change-amount').val(change >= 0 ? formatNumber(change) : '');
         }
@@ -222,6 +300,30 @@
             const awal = cleanAngka($('#paid-amount-display').val());
             $('#paid-amount-display').val(formatRibuan(awal));
             $('#paid-amount').val(awal);
+            updateLegalWarning(); // evaluasi awal (jika ada preselect)
         });
+
+        // ===== Peringatan global (atas) =====
+        function updateLegalWarning() {
+            let restrictedItems = [];
+            $('#items-table tbody tr').each(function () {
+                const opt = $(this).find('.product-select')[0]?.selectedOptions[0];
+                if (!opt) return;
+                const dcNorm = norm(opt.dataset.drugClass || '');
+                const name   = (opt.dataset.name || opt.textContent || '').trim();
+                if (RESTRICTED.has(dcNorm)) restrictedItems.push({ name, dc: dcNorm });
+            });
+
+            if (restrictedItems.length > 0) {
+                const listHtml = restrictedItems.map(i =>
+                    `<li><strong>${i.name}</strong> — ${formatDrugClass(i.dc)} (wajib resep & pencatatan)</li>`
+                ).join('');
+                $('#legal-warning-list').html(listHtml);
+                $('#legal-warning').removeClass('d-none');
+            } else {
+                $('#legal-warning-list').empty();
+                $('#legal-warning').addClass('d-none');
+            }
+        }
     </script>
 </x-app-layout>

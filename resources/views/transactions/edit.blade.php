@@ -2,6 +2,19 @@
     <x-page-title>Edit Penjualan</x-page-title>
 
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
+        {{-- PERINGATAN REGULASI (dinamis, warning-only) --}}
+        <div id="legal-warning" class="alert alert-warning d-none" role="alert" aria-live="polite">
+            <div class="d-flex align-items-start">
+                <div class="me-2">⚠️</div>
+                <div>
+                    <strong>Peringatan Regulasi:</strong> Terdapat item dengan golongan obat yang
+                    <em>tidak boleh dijual bebas</em>. Penyerahan wajib melalui fasilitas kefarmasian
+                    dan <em>berdasarkan resep</em> serta pencatatan sesuai ketentuan.
+                    <ul id="legal-warning-list" class="mb-0 mt-2"></ul>
+                </div>
+            </div>
+        </div>
+
         <form action="{{ route('transactions.update', $transaction->id) }}" method="POST">
             @csrf
             @method('PUT')
@@ -44,23 +57,34 @@
                 <tbody>
                     @foreach ($transaction->details as $i => $d)
                         <tr>
-                            <td>
+                            <td class="product-cell">
                                 <select name="items[{{ $i }}][product_id]" class="form-select product-select select2-product">
                                     <option></option>
                                     @foreach ($products as $p)
-                                        <option value="{{ $p->id }}" data-price="{{ $p->price }}"
+                                        <option value="{{ $p->id }}"
+                                            data-price="{{ $p->price ?? $p->fifo_price ?? 0 }}"
+                                            data-drug-class="{{ $p->drug_class }}"
+                                            data-name="{{ $p->name }}"
                                             {{ $d->product_id == $p->id ? 'selected' : '' }}>
                                             {{ $p->name }}
                                         </option>
                                     @endforeach
                                 </select>
+                                {{-- Catatan regulasi (muncul hanya bila terbatas) --}}
+                                <div class="small text-danger fw-semibold legal-note d-none"></div>
                             </td>
-                            <td><input type="number" min="1" name="items[{{ $i }}][quantity]"
-                                       class="form-control qty-input" value="{{ $d->quantity }}"></td>
-                            <td><input type="text" class="form-control price-input"
-                                       value="{{ number_format($d->price,0,',','.') }}" readonly></td>
-                            <td><input type="text" class="form-control total-input"
-                                       value="{{ number_format($d->total,0,',','.') }}" readonly></td>
+                            <td>
+                                <input type="number" min="1" name="items[{{ $i }}][quantity]"
+                                       class="form-control qty-input" value="{{ $d->quantity }}">
+                            </td>
+                            <td>
+                                <input type="text" class="form-control price-input"
+                                       value="{{ number_format($d->price,0,',','.') }}" readonly>
+                            </td>
+                            <td>
+                                <input type="text" class="form-control total-input"
+                                       value="{{ number_format($d->total,0,',','.') }}" readonly>
+                            </td>
                             <td><button type="button" class="btn btn-danger remove-item">Hapus</button></td>
                         </tr>
                     @endforeach
@@ -109,6 +133,14 @@
         }
         .select2-container .select2-selection__arrow { height:38px!important;top:0!important;right:8px }
         .select2-container--default .select2-results__option { font-size:.9rem;padding:6px 12px }
+
+        /* Default sejajar tengah; jika ada catatan -> top aligned */
+        #items-table tbody td { vertical-align: middle; }
+        #items-table tbody tr.has-legal-note td { vertical-align: top; padding-top: .25rem; }
+
+        /* Catatan hanya tampil saat terbatas; tinggi baris stabil */
+        .legal-note { display:none; margin-top:.25rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        #items-table tbody tr.has-legal-note .legal-note { display:block; }
     </style>
 
     {{-- SCRIPTS --}}
@@ -117,12 +149,141 @@
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
     <script>
+        // ===== Util Rupiah =====
         const toIDR = n => new Intl.NumberFormat('id-ID').format(+n || 0);
         const parseNumber = s => parseFloat((s || '0').replace(/\./g,'')) || 0;
         const roundToNearest = (value, nearest = 100) => Math.round(value / nearest) * nearest;
-
         const formatRibuan = angka => new Intl.NumberFormat('id-ID').format(angka || 0);
         const cleanAngka = str => parseFloat((str || '').replace(/\./g,'')) || 0;
+
+        // ===== Golongan obat (SATU definisi saja) =====
+        const RESTRICTED = new Set(['obat_keras','psikotropika','obat_narkotika']);
+        const norm = k => (k || '').toString().trim().toLowerCase().replace(/[\s-]+/g,'_');
+        const DRUG_CLASS_LABELS = {
+            'obat_bebas':'Obat Bebas',
+            'obat_bebas_terbatas':'Obat Bebas Terbatas',
+            'obat_keras':'Obat Keras',
+            'psikotropika':'Psikotropika',
+            'obat_narkotika':'Narkotika',
+            'obat_herbal':'Obat Herbal',
+            'obat_herbal_terstandar':'Obat Herbal Terstandar',
+            'fitofarmaka':'Fitofarmaka',
+        };
+        const labelDrug = k => DRUG_CLASS_LABELS[norm(k)] || k || '-';
+
+        // ===== Select2 =====
+        function initSelect2(target=document){
+            $(target).find('.select2-customer').select2({
+                placeholder:'Pilih pelanggan', allowClear:true, width:'100%',
+                language:{ noResults:()=> 'Tidak ditemukan' }
+            });
+            $(target).find('.select2-product').select2({
+                placeholder:'Pilih produk', allowClear:true, width:'100%',
+                language:{ noResults:()=> 'Tidak ditemukan' }
+            });
+        }
+        initSelect2();
+
+        // Pastikan select2 memicu handler change
+        $(document).on('select2:select', '.product-select', function(){ $(this).trigger('change'); });
+        $(document).on('select2:open',()=>setTimeout(()=>{
+            document.querySelector('.select2-container--open .select2-search__field')?.focus();
+        },0));
+
+        // ===== Tambah baris =====
+        let idx = {{ count($transaction->details) }};
+        $('#add-item').click(()=>{
+            $('#items-table tbody').append(`
+                <tr>
+                    <td class="product-cell">
+                        <select name="items[${idx}][product_id]" class="form-select product-select select2-product">
+                            <option></option>
+                            @foreach($products as $p)
+                                <option value="{{ $p->id }}"
+                                        data-price="{{ $p->price ?? $p->fifo_price ?? 0 }}"
+                                        data-drug-class="{{ $p->drug_class }}"
+                                        data-name="{{ $p->name }}">
+                                    {{ $p->name }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <div class="small text-danger fw-semibold legal-note d-none"></div>
+                    </td>
+                    <td><input type="number" min="1" name="items[${idx}][quantity]" class="form-control qty-input"></td>
+                    <td><input type="text" class="form-control price-input" readonly></td>
+                    <td><input type="text" class="form-control total-input" readonly></td>
+                    <td><button type="button" class="btn btn-danger remove-item">Hapus</button></td>
+                </tr>`);
+            initSelect2($('#items-table tbody tr:last'));
+            idx++;
+        });
+
+        // ===== Hapus baris =====
+        $(document).on('click','.remove-item',function(){
+            $(this).closest('tr').remove();
+            updateGrand(); updateLegalWarning();
+        });
+
+        // ===== Terapkan pilihan produk ke baris =====
+        function applySelection($row, opt, {preserveInputs=false}={}){
+            if (!opt) return;
+
+            const priceRaw = parseFloat(opt.dataset.price || 0);
+            const rounded  = roundToNearest(priceRaw, 100);
+            const dcNorm   = norm(opt.dataset.drugClass);
+
+            // Harga & total
+            if (!preserveInputs || !$row.find('.price-input').val()) {
+                $row.find('.price-input').val(toIDR(rounded));
+            }
+            const qty = parseFloat($row.find('.qty-input').val()) || 0;
+            if (!preserveInputs || !$row.find('.total-input').val()) {
+                $row.find('.total-input').val(qty ? toIDR(rounded * qty) : '');
+            }
+
+            // Catatan & transformasi baris
+            const $note = $row.find('.legal-note');
+            if (RESTRICTED.has(dcNorm)) {
+                const message = `Perhatian: ${labelDrug(dcNorm)} — wajib resep & pencatatan.`;
+                $note.text(message).attr('title', message).removeClass('d-none');
+                $row.addClass('has-legal-note');
+            } else {
+                $note.text('').attr('title','').addClass('d-none');
+                $row.removeClass('has-legal-note');
+            }
+        }
+
+        // ===== Saat pilih produk =====
+        $(document).on('change','.product-select',function(){
+            const $row = $(this).closest('tr');
+            const opt  = this.selectedOptions[0];
+            applySelection($row, opt, {preserveInputs:false});
+            updateGrand(); updateLegalWarning();
+        });
+
+        // ===== Qty berubah =====
+        $(document).on('input','.qty-input',function(){
+            const $row  = $(this).closest('tr');
+            const price = parseNumber($row.find('.price-input').val());
+            const qty   = +this.value || 0;
+            $row.find('.total-input').val(qty ? toIDR(price * qty) : '');
+            updateGrand();
+        });
+
+        // ===== Grand total & kembalian =====
+        function updateGrand(){
+            let sum = 0;
+            $('.total-input').each(function(){ sum += parseNumber(this.value); });
+            $('#total-price').val(toIDR(sum));
+            updateChange();
+        }
+
+        function updateChange() {
+            const total = parseNumber($('#total-price').val());
+            const paid  = parseNumber($('#paid-amount').val());
+            const change = paid - total;
+            $('#change-amount').val(change >= 0 ? toIDR(change) : '0');
+        }
 
         // Format Uang Dibayar
         $('#paid-amount-display').on('input', function () {
@@ -137,79 +298,38 @@
             $('#paid-amount').val(awal);
         });
 
-        function initSelect2(target=document){
-            $(target).find('.select2-customer').select2({
-                placeholder:'Pilih pelanggan', allowClear:true, width:'100%',
-                language:{ noResults:()=> 'Tidak ditemukan' }
+        // ===== Peringatan global (atas) =====
+        function updateLegalWarning() {
+            const items = [];
+            $('#items-table tbody tr').each(function () {
+                const opt = $(this).find('.product-select')[0]?.selectedOptions[0];
+                if (!opt) return;
+                const dcNorm = norm(opt.dataset.drugClass);
+                const name   = (opt.dataset.name || opt.textContent || '').trim();
+                if (RESTRICTED.has(dcNorm)) items.push({ name, dc: dcNorm });
             });
-            $(target).find('.select2-product').select2({
-                placeholder:'Pilih produk', allowClear:true, width:'100%',
-                language:{ noResults:()=> 'Tidak ditemukan' }
-            });
+
+            if (items.length > 0) {
+                const listHtml = items.map(i =>
+                    `<li><strong>${i.name}</strong> — ${labelDrug(i.dc)} (wajib resep & pencatatan)</li>`
+                ).join('');
+                $('#legal-warning-list').html(listHtml);
+                $('#legal-warning').removeClass('d-none');
+            } else {
+                $('#legal-warning-list').empty();
+                $('#legal-warning').addClass('d-none');
+            }
         }
-        initSelect2();
 
-        $(document).on('select2:open',()=>setTimeout(()=>{
-            document.querySelector('.select2-container--open .select2-search__field')?.focus();
-        },0));
-
-        let idx = {{ count($transaction->details) }};
-        $('#add-item').click(()=>{
-            $('#items-table tbody').append(`
-                <tr>
-                    <td>
-                        <select name="items[${idx}][product_id]" class="form-select product-select select2-product">
-                            <option></option>
-                            @foreach($products as $p)
-                                <option value="{{ $p->id }}" data-price="{{ $p->price }}">{{ $p->name }}</option>
-                            @endforeach
-                        </select>
-                    </td>
-                    <td><input type="number" min="1" name="items[${idx}][quantity]" class="form-control qty-input"></td>
-                    <td><input type="text" class="form-control price-input" readonly></td>
-                    <td><input type="text" class="form-control total-input" readonly></td>
-                    <td><button type="button" class="btn btn-danger remove-item">Hapus</button></td>
-                </tr>`);
-            initSelect2($('#items-table tbody tr:last'));
-            idx++;
-        });
-
-        $(document).on('click','.remove-item',function(){
-            $(this).closest('tr').remove(); updateGrand();
-        });
-
-        $(document).on('change','.product-select',function(){
-            const rawPrice = parseFloat(this.selectedOptions[0]?.dataset.price || 0);
-            const roundedPrice = roundToNearest(rawPrice, 100);
-            const $row = $(this).closest('tr');
-            $row.find('.price-input').val(toIDR(roundedPrice));
-            $row.find('.qty-input').val(1).trigger('input');
-        });
-
-        $(document).on('input','.qty-input',function(){
-            const $row  = $(this).closest('tr');
-            const price = parseNumber($row.find('.price-input').val());
-            const qty   = +this.value || 0;
-            $row.find('.total-input').val(qty ? toIDR(price * qty) : '');
+        // ===== Inisialisasi baris existing =====
+        $(document).ready(function(){
+            $('#items-table tbody tr').each(function(){
+                const sel = $(this).find('.product-select')[0];
+                const opt = sel?.selectedOptions[0];
+                applySelection($(this), opt, {preserveInputs:true});
+            });
             updateGrand();
+            updateLegalWarning();
         });
-
-        function updateGrand(){
-            let sum = 0;
-            $('.total-input').each(function(){
-                sum += parseNumber(this.value);
-            });
-            $('#total-price').val(toIDR(sum));
-            updateChange();
-        }
-
-        function updateChange() {
-            const total = parseNumber($('#total-price').val());
-            const paid  = parseNumber($('#paid-amount').val());
-            const change = paid - total;
-            $('#change-amount').val(change >= 0 ? toIDR(change) : '0');
-        }
-
-        updateGrand();
     </script>
 </x-app-layout>

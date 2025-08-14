@@ -11,9 +11,21 @@ use Illuminate\Http\Request;
 use Illuminate\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
 {
+    // daftar nilai yang sah untuk drug_class
+    private array $drugClasses = [
+        'obat_bebas',
+        'obat_bebas_terbatas',
+        'obat_keras',
+        'obat_narkotika',
+        'obat_herbal',
+        'obat_herbal_terstandar',
+        'fitofarmaka',
+    ];
+
     public function index(Request $request): View
     {
         $products = Product::with([
@@ -27,7 +39,9 @@ class ProductController extends Controller
             ->when($request->search, function ($query) use ($request) {
                 $search = $request->search;
                 $query->where('name', 'LIKE', "%{$search}%")
-                    ->orWhereHas('category', fn($q) => $q->where('name', 'LIKE', "%{$search}%"));
+                    ->orWhereHas('category', fn($q) => $q->where('name', 'LIKE', "%{$search}%"))
+                    // opsional: ikutkan pencarian berdasarkan golongan obat
+                    ->orWhere('drug_class', 'LIKE', "%{$search}%");
             })
             ->latest()
             ->paginate(10)
@@ -43,7 +57,10 @@ class ProductController extends Controller
         $units = Unit::select('id', 'name')->get();
         $suppliers = Supplier::select('id', 'name')->get();
 
-        return view('products.create', compact('categories', 'units', 'suppliers'));
+        // kirim daftar kelas obat ke view jika ingin dipakai untuk select
+        $drugClasses = $this->drugClasses;
+
+        return view('products.create', compact('categories', 'units', 'suppliers', 'drugClasses'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -57,7 +74,8 @@ class ProductController extends Controller
             'price'         => 'required|string',
             'qty'           => 'required|integer|min:1',
             'expired_date'  => 'required|date|after_or_equal:today',
-            'image'         => 'nullable|image|mimes:jpeg,jpg,png|max:1024'
+            'image'         => 'nullable|image|mimes:jpeg,jpg,png|max:1024',
+            'drug_class'    => ['required', Rule::in($this->drugClasses)],
         ]);
 
         $imageName = $request->hasFile('image')
@@ -72,16 +90,17 @@ class ProductController extends Controller
             'name'        => $request->name,
             'description' => $request->description,
             'image'       => $imageName ? basename($imageName) : null,
-            // Diatur ke default
+            'drug_class'  => $request->drug_class, // <— simpan golongan obat
+            // nilai default; akan diperbarui via FIFO
             'price'       => 0,
             'qty'         => 0,
             'expired_date'=> null,
         ]);
 
-        // Konversi harga dari format Indonesia
+        // Konversi harga Indonesia ke float
         $parsedPrice = (float) str_replace(['.', ','], ['', '.'], $request->price);
 
-        // Simpan sebagai batch pertama
+        // Simpan batch pertama ke riwayat stok
         ProductStockHistory::create([
             'product_id'   => $product->id,
             'price'        => $parsedPrice,
@@ -89,7 +108,7 @@ class ProductController extends Controller
             'expired_date' => $request->expired_date,
         ]);
 
-        // Perbarui produk utama untuk mencerminkan batch pertama (FIFO)
+        // Perbarui produk utama mengikuti batch tertua (FIFO)
         $product->updateProductWithFIFO();
 
         return redirect()->route('products.index')->with('success', 'Produk berhasil ditambahkan.');
@@ -101,20 +120,22 @@ class ProductController extends Controller
         $categories = Category::select('id', 'name')->get();
         $units = Unit::select('id', 'name')->get();
         $suppliers = Supplier::select('id', 'name')->get();
+        $drugClasses = $this->drugClasses;
 
-        return view('products.edit', compact('product', 'categories', 'units', 'suppliers'));
+        return view('products.edit', compact('product', 'categories', 'units', 'suppliers', 'drugClasses'));
     }
 
     public function update(Request $request, $id): RedirectResponse
     {
         $request->validate([
-            'category_id' => 'required|exists:categories,id',
-            'unit_id'     => 'required|exists:units,id',
-            'supplier_id' => 'required|exists:suppliers,id',
-            'name'        => 'required',
-            'description' => 'required',
-            'expired_date'=> 'nullable|date',
-            'image'       => 'nullable|image|mimes:jpeg,jpg,png|max:1024'
+            'category_id'  => 'required|exists:categories,id',
+            'unit_id'      => 'required|exists:units,id',
+            'supplier_id'  => 'required|exists:suppliers,id',
+            'name'         => 'required',
+            'description'  => 'required',
+            'expired_date' => 'nullable|date',
+            'image'        => 'nullable|image|mimes:jpeg,jpg,png|max:1024',
+            'drug_class'   => ['required', Rule::in($this->drugClasses)],
         ]);
 
         $product = Product::findOrFail($id);
@@ -133,6 +154,7 @@ class ProductController extends Controller
             'supplier_id' => $request->supplier_id,
             'name'        => $request->name,
             'description' => $request->description,
+            'drug_class'  => $request->drug_class, // <— update golongan obat
         ]);
 
         return redirect()->route('products.index')->with('success', 'Produk berhasil diperbarui.');

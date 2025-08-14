@@ -20,24 +20,72 @@
                         <input type="text" class="form-control" value="{{ $product->category->name }}" readonly>
                     </div>
 
-                    {{-- Satuan --}}
-                    <div class="mb-3">
-                        <label class="form-label">Satuan</label>
-                        <input type="text" class="form-control" value="{{ $product->unit->name ?? '-' }}" readonly>
-                    </div>
+                    
+                    <div class="row">
+                        <!-- Satuan -->
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Satuan</label>
+                            <input type="text" class="form-control" value="{{ $product->unit->name ?? '-' }}" readonly>
+                        </div>
 
+                        {{-- Golongan Obat --}}
+                        @php
+                            // Mapping label & ikon golongan obat
+                            $drugLabels = [
+                                'obat_bebas'             => 'Obat Bebas',
+                                'obat_bebas_terbatas'    => 'Obat Bebas Terbatas',
+                                'obat_keras'             => 'Obat Keras',
+                                'obat_narkotika'         => 'Narkotika',
+                                'obat_herbal'            => 'Obat Herbal',
+                                'obat_herbal_terstandar' => 'Obat Herbal Terstandar',
+                                'fitofarmaka'            => 'Fitofarmaka',
+                                // jika Anda menambahkan 'psikotropika' di DB, aktifkan baris berikut:
+                                // 'psikotropika'           => 'Psikotropika',
+                            ];
+                            $drugImages = [
+                                'obat_bebas'             => asset('images/obat-bebas.png'),
+                                'obat_bebas_terbatas'    => asset('images/obat-bebas-terbatas.png'),
+                                'obat_keras'             => asset('images/obat-keras.png'),
+                                'obat_narkotika'         => asset('images/obat-narkotika.png'),
+                                'obat_herbal'            => asset('images/obat-herbal.png'),
+                                'obat_herbal_terstandar' => asset('images/obat-herbal-terstandar.png'),
+                                'fitofarmaka'            => asset('images/obat-fitofarmaka.png'),
+                                // 'psikotropika'         => asset('images/obat-psikotropika.png'),
+                            ];
+                            $drugKey   = $product->drug_class;
+                            $drugLabel = $drugLabels[$drugKey] ?? '-';
+                            $drugIcon  = $drugImages[$drugKey] ?? null;
+                        @endphp
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Golongan Obat</label>
+                            <div class="form-control d-flex align-items-center bg-light">
+                                @if($drugIcon)
+                                    <img src="{{ $drugIcon }}" alt="{{ $drugLabel }}" width="22" class="me-2 rounded-circle">
+                                @endif
+                                <span>{{ $drugLabel }}</span>
+                            </div>
+                        </div>
+                    </div>
                     {{-- Deskripsi --}}
                     <div class="mb-3">
                         <label class="form-label">Deskripsi</label>
                         <textarea class="form-control" rows="5" readonly>{{ $product->description }}</textarea>
                     </div>
+
                     {{-- Harga Baru --}}
                     <div class="mb-3">
                         <label class="form-label">Harga Baru <span class="text-danger">*</span></label>
                         <div class="input-group">
                             <span class="input-group-text">Rp</span>
-                            <input type="text" name="price" class="form-control mask-number @error('price') is-invalid @enderror"
-                                   value="{{ old('price', number_format($product->price, 0, '', '.')) }}" autocomplete="off" required>
+                            <input
+                                type="text"
+                                name="price"
+                                class="form-control mask-number @error('price') is-invalid @enderror"
+                                value="{{ old('price', number_format($product->price, 0, '', '.')) }}"
+                                autocomplete="off"
+                                required
+                            >
                         </div>
                         @error('price')
                             <div class="alert alert-danger mt-2">{{ $message }}</div>
@@ -48,7 +96,7 @@
                 <!-- Kanan: Input Stok Baru -->
                 <div class="col-lg-5">
                     <div class="row">
-                    {{-- Jumlah --}}
+                        {{-- Jumlah --}}
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Jumlah <span class="text-danger">*</span></label>
                             <input type="number" name="qty" class="form-control @error('qty') is-invalid @enderror" value="{{ old('qty') }}" min="1" required>
@@ -56,16 +104,23 @@
                                 <div class="alert alert-danger mt-2">{{ $message }}</div>
                             @enderror
                         </div>
-                    {{-- Tanggal Kadaluarsa --}}
+
+                        {{-- Tanggal Kadaluarsa --}}
                         <div class="col-md-6 mb-3">
                             <label class="form-label">Tanggal Kadaluarsa <span class="text-danger">*</span></label>
-                            <input type="date" name="expired_date" class="form-control @error('expired_date') is-invalid @enderror"
-                                value="{{ old('expired_date') }}" required>
+                            <input
+                                type="date"
+                                name="expired_date"
+                                class="form-control @error('expired_date') is-invalid @enderror"
+                                value="{{ old('expired_date') }}"
+                                required
+                            >
                             @error('expired_date')
                                 <div class="alert alert-danger mt-2">{{ $message }}</div>
                             @enderror
                         </div>
                     </div>
+
                     {{-- Pemasok --}}
                     <div class="mb-3">
                         <label class="form-label">Pemasok</label>
@@ -76,9 +131,12 @@
                     <div class="mb-3">
                         <label class="form-label">Gambar Produk <span class="text-danger">*</span></label>
                         <div class="text-center">
-                            <img src="{{ asset('storage/products/'.$product->image) }}"
+                            <img
+                                src="{{ $product->image ? asset('storage/products/'.$product->image) : asset('images/no-image.svg') }}"
                                 class="img-thumbnail rounded-4 shadow-sm mt-2"
-                                width="60%" alt="Gambar Produk">
+                                width="60%"
+                                alt="Gambar Produk"
+                            >
                         </div>
                     </div>
                 </div>

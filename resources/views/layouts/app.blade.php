@@ -143,5 +143,8 @@
             $('.mask-number').mask('#.##0', { reverse: true });
         });
     </script>
+
+    {{-- <<< PENTING: taruh stack halaman di sini agar @push('scripts') dari view tampil >>> --}}
+    @stack('scripts')
 </body>
 </html>

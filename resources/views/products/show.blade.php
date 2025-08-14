@@ -6,35 +6,90 @@
         {{-- Menampilkan detail produk --}}
         <div class="row flex-lg-row align-items-center g-5">
             <div class="col-lg-3">
-                <img src="{{ asset('storage/products/' . $product->image) }}"
+                @php
+                    $productImage = $product->image
+                        ? asset('storage/products/' . $product->image)
+                        : asset('images/no-image.svg');
+                @endphp
+                <img src="{{ $productImage }}"
                      class="d-block mx-lg-auto img-thumbnail rounded-4 shadow-sm"
                      alt="Gambar Produk" loading="lazy">
             </div>
+
             <div class="col-lg-9">
                 <h4>{{ $product->name }}</h4>
-                <p class="text-muted">
-                    <i class="ti ti-tag me-1"></i> {{ $product->category->name }}
+
+                <p class="text-muted mb-2">
+                    <i class="ti ti-tag me-1"></i> {{ $product->category->name ?? 'Tidak ada kategori' }}
                 </p>
+
                 <p style="text-align: justify">{{ $product->description }}</p>
 
-                {{-- FIFO Harga & Tanggal Kadaluarsa --}}
+                {{-- FIFO Harga & Tanggal Kedaluwarsa --}}
                 @php
                     $oldestStock = $product->stockHistories->where('qty', '>', 0)->sortBy('expired_date')->first();
-                    $totalQty = $product->stockHistories->sum('qty');
+                    $totalQty    = $product->stockHistories->sum('qty');
+
+                    $drugMeta = [
+                        'obat_bebas' => [
+                            'label' => 'Obat Bebas',
+                            'icon'  => asset('images/obat-bebas.png'),
+                        ],
+                        'obat_bebas_terbatas' => [
+                            'label' => 'Obat Bebas Terbatas',
+                            'icon'  => asset('images/obat-bebas-terbatas.png'),
+                        ],
+                        'obat_keras' => [
+                            'label' => 'Obat Keras',
+                            'icon'  => asset('images/obat-keras.png'),
+                        ],
+                        'obat_narkotika' => [
+                            'label' => 'Obat Narkotika',
+                            'icon'  => asset('images/obat-narkotika.png'),
+                        ],
+                        'obat_herbal' => [
+                            'label' => 'Obat Herbal',
+                            'icon'  => asset('images/obat-herbal.png'),
+                        ],
+                        'obat_herbal_terstandar' => [
+                            'label' => 'Obat Herbal Terstandar',
+                            'icon'  => asset('images/obat-herbal-terstandar.png'),
+                        ],
+                        'fitofarmaka' => [
+                            'label' => 'Fitofarmaka',
+                            'icon'  => asset('images/obat-fitofarmaka.png'),
+                        ],
+                    ];
+
+                    $drugKey = trim((string) $product->drug_class);
+                    $meta    = $drugMeta[$drugKey] ?? null;
                 @endphp
 
-                <p class="text-success fw-bold">
+                <p class="text-success fw-bold mb-2">
                     {{ 'Rp ' . number_format($oldestStock?->price ?? 0, 0, '', '.') . ' / ' . ($product->unit?->name ?? 'Tidak ada satuan') }}
                 </p>
 
-                <p><strong>Tanggal Kedaluwarsa:</strong>
-                    {{ $oldestStock?->expired_date 
-                        ? \Carbon\Carbon::parse($oldestStock->expired_date)->locale('id')->translatedFormat('d F Y') 
+                <p class="mb-1"><strong>Tanggal Kedaluwarsa:</strong>
+                    {{ $oldestStock?->expired_date
+                        ? \Carbon\Carbon::parse($oldestStock->expired_date)->locale('id')->translatedFormat('d F Y')
                         : '-' }}
                 </p>
 
-                <p><strong>Jumlah Total Stok:</strong> {{ $totalQty }}</p>
-                <p><strong>Pemasok:</strong> {{ $product->supplier->name ?? 'Tidak ada pemasok' }}</p>
+                <p class="mb-1"><strong>Jumlah Total Stok:</strong> {{ $totalQty }}</p>
+
+                <p class="mb-1"><strong>Pemasok:</strong> {{ $product->supplier->name ?? 'Tidak ada pemasok' }}</p>
+
+                {{-- Golongan Obat (dengan ikon jika tersedia) --}}
+                <p class="mb-0"><strong>Golongan Obat:</strong>
+                    @if($meta)
+                        {{ $meta['label'] }}
+                        @if(!empty($meta['icon']))
+                            <img src="{{ $meta['icon'] }}" alt="{{ $meta['label'] }}" width="20" class="me-2 align-text-bottom">
+                        @endif
+                    @else
+                        -
+                    @endif
+                </p>
             </div>
         </div>
 
@@ -57,7 +112,7 @@
                         <tbody>
                             @foreach($product->stockHistories->sortBy('created_at') as $index => $history)
                                 @php
-                                    $expired = \Carbon\Carbon::parse($history->expired_date)->isPast();
+                                    $expired  = \Carbon\Carbon::parse($history->expired_date)->isPast();
                                     $emptyQty = $history->qty <= 0;
                                 @endphp
                                 <tr>
@@ -87,7 +142,8 @@
                                                             </h1>
                                                         </div>
                                                         <div class="modal-body">
-                                                            Apakah Anda yakin ingin menghapus batch stok dari produk <span class="fw-bold">{{ $product->name }}</span>
+                                                            Apakah Anda yakin ingin menghapus batch stok dari produk
+                                                            <span class="fw-bold">{{ $product->name }}</span>
                                                             dengan ID batch <span class="fw-bold">#{{ $history->id }}</span>?
                                                         </div>
                                                         <div class="modal-footer">
