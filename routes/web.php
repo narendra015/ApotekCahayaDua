@@ -28,9 +28,9 @@ Route::post('/logout', [AuthController::class, 'logout'])->name('logout');  // L
 
 // Route untuk dashboard
 Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+Route::get('/dashboard/analytics/timeseries',[DashboardController::class, 'timeseries'])->name('dashboard.analytics.timeseries');
+Route::get('/dashboard/analytics/top-products',[DashboardController::class, 'topProducts'])->name('dashboard.analytics.top_products');
 
-Route::get('/dashboard/analytics/timeseries', [DashboardController::class, 'timeseries'])->name('dashboard.analytics.timeseries');
-Route::get('/dashboard/analytics/top-products', [DashboardController::class, 'topProducts'])->name('dashboard.analytics.top_products');
 // Route default untuk root ("/") untuk mengarahkan ke dashboard
 Route::get('/', function() {
     return redirect()->route('dashboard');  // Redirect ke dashboard sebagai halaman utama

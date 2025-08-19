@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;   // <— tambahkan
 use Illuminate\View\View;
 
 class DashboardController extends Controller
@@ -29,6 +30,13 @@ class DashboardController extends Controller
             if (Schema::hasColumn($table, $col)) return $col;
         }
         return null;
+    }
+
+    /** Helper: buat URL absolut ke gambar produk (storage/public/products) */
+    private static function productImageUrl(?string $filename): string
+    {
+        $filename = $filename ?: 'default.png';
+        return URL::asset('storage/products/' . $filename);
     }
 
     /**
@@ -158,13 +166,13 @@ class DashboardController extends Controller
                     : $q->whereBetween($dateCol, [$start, $end]);
             };
 
-            // 3) Ambil AMOUNT per hari (dari transactions jika ada kolom total, else dari detail)
+            // 3) Ambil AMOUNT per hari
             if ($hasTotalAmount) {
                 $amountRows = $applyRange(DB::table($trxTable))
                     ->selectRaw("DATE($dateCol) as d, SUM($totalCol) as total_amount")
                     ->groupBy('d')->orderBy('d')->get();
             } else {
-                // Fallback: hitung amount dari detail (qty * price) jika kolom tersedia
+                // Fallback: hitung amount dari detail (qty * price)
                 $query = $applyRange(DB::table("$trxTable as t")->leftJoin("$tdTable as td", 'td.transaction_id', '=', 't.id'))
                     ->selectRaw("DATE(t.$dateCol) as d");
 
@@ -177,7 +185,7 @@ class DashboardController extends Controller
                 $amountRows = $query->groupBy('d')->orderBy('d')->get();
             }
 
-            // 4) Ambil QTY per hari (SELALU dari detail jika ada; tidak bergantung transactions.total_qty)
+            // 4) Ambil QTY per hari
             if ($hasQtyDetail) {
                 $qtyRows = $applyRange(DB::table("$trxTable as t")->join("$tdTable as td", 'td.transaction_id', '=', 't.id'))
                     ->selectRaw("DATE(t.$dateCol) as d, SUM(td.$qtyColDetail) as total_qty")
@@ -213,7 +221,6 @@ class DashboardController extends Controller
                 $valAmount = $map[$key]['amount'] ?? 0.0;
                 $valQty    = $map[$key]['qty'] ?? 0.0;
 
-                // >>> gunakan $metric yang dibawa dari luar, jangan request() di sini
                 $val = $metric === 'qty' ? $valQty : $valAmount;
 
                 $main[] = $val;
@@ -249,7 +256,10 @@ class DashboardController extends Controller
         });
     }
 
-    // Endpoint Top Produk (untuk bar chart)
+    /**
+     * Endpoint Top Produk (untuk bar chart)
+     * Mengembalikan image_url absolut agar bisa digambar di kanvas Chart.js
+     */
     public function topProducts(Request $req)
     {
         $range  = $req->get('range', '30d');     // 7d|30d|90d|ytd
@@ -259,7 +269,7 @@ class DashboardController extends Controller
         $trxTable = 'transactions';
         $tdTable  = 'transaction_details';
 
-        // pakai 'date' kalau ada, else 'created_at'
+        // Pakai 'date' kalau ada, else 'created_at'
         $dateCol = Schema::hasColumn($trxTable, 'date') ? 'date' : 'created_at';
 
         $start = match ($range) {
@@ -271,11 +281,10 @@ class DashboardController extends Controller
         };
         $end = now()->endOfDay();
 
-        // kolom qty/harga detail (fallback: quantity, price)
-        $qtyCol   = Schema::hasColumn($tdTable,'quantity') ? 'quantity' : (Schema::hasColumn($tdTable,'qty') ? 'qty' : 'quantity');
-        $priceCol = Schema::hasColumn($tdTable,'price') ? 'price' : (Schema::hasColumn($tdTable,'unit_price') ? 'unit_price' : 'price');
+        // Kolom qty/harga detail (pakai helper pickColumn)
+        $qtyCol   = self::pickColumn($tdTable, self::DETAIL_QTY_CANDIDATES)   ?? 'quantity';
+        $priceCol = self::pickColumn($tdTable, self::DETAIL_PRICE_CANDIDATES) ?? 'price';
 
-        // current period aggregate
         $q = DB::table("$trxTable as t")
             ->join("$tdTable as d", 'd.transaction_id', '=', 't.id')
             ->join('products as p', 'p.id', '=', 'd.product_id')
@@ -299,14 +308,17 @@ class DashboardController extends Controller
         $rows = $q->get();
 
         return response()->json([
-            'items' => $rows->map(fn($r)=>[
-                'product_id' => $r->id,
-                'name'       => $r->name,
-                'image'      => $r->image,
-                'price'      => (float)$r->price,
-                'total_qty'  => (float)$r->total_qty,
-                'total_amt'  => (float)$r->total_amount,
-            ])
+            'items' => $rows->map(function ($r) {
+                return [
+                    'product_id' => $r->id,
+                    'name'       => $r->name,
+                    'image'      => $r->image,                               // tetap kirim jika Anda butuh
+                    'image_url'  => self::productImageUrl($r->image),        // <— URL absolut untuk Chart.js
+                    'price'      => (float) $r->price,
+                    'total_qty'  => (float) $r->total_qty,
+                    'total_amt'  => (float) $r->total_amount,
+                ];
+            }),
         ]);
     }
 }

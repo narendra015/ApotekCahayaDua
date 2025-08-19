@@ -6,10 +6,10 @@
     <div class="row mb-3">
         @php
             $cards = [
-                ['title' => 'Kategori', 'count' => $totalCategory, 'icon' => 'ti-category', 'color' => 'primary-2'],
-                ['title' => 'Produk',   'count' => $totalProduct,  'icon' => 'ti-copy',    'color' => 'success'],
-                ['title' => 'Pelanggan','count' => $totalCustomer, 'icon' => 'ti-users',   'color' => 'warning'],
-                ['title' => 'Transaksi','count' => $totalTransaction,'icon'=>'ti-folders','color' => 'info'],
+                ['title' => 'Kategori',  'count' => $totalCategory,    'icon' => 'ti-category', 'color' => 'primary-2'],
+                ['title' => 'Produk',    'count' => $totalProduct,     'icon' => 'ti-copy',     'color' => 'success'],
+                ['title' => 'Pelanggan', 'count' => $totalCustomer,    'icon' => 'ti-users',    'color' => 'warning'],
+                ['title' => 'Transaksi', 'count' => $totalTransaction, 'icon' => 'ti-folders',  'color' => 'info'],
             ];
         @endphp
 
@@ -29,30 +29,8 @@
             </div>
         @endforeach
     </div>
-    {{-- 5 Produk Terlaris --}}
-    <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
-        <h6 class="mb-3 text-center">
-            <i class="ti ti-folder-star fs-5 me-1"></i> 5 Produk Terlaris
-        </h6>
-        <div class="table-responsive">
-            <table class="table table-bordered table-striped text-center">
-                <thead><tr><th>Gambar</th><th>Nama</th><th>Harga</th><th>Terjual</th></tr></thead>
-                <tbody>
-                    @forelse ($transactions as $t)
-                        <tr>
-                            <td><img src="{{ asset('/storage/products/' . $t->product->image) }}" width="80" class="img-thumbnail"></td>
-                            <td>{{ $t->product->name }}</td>
-                            <td>Rp {{ number_format($t->product->price, 0, '', '.') }}</td>
-                            <td>{{ $t->transactions_sum_qty }}</td>
-                        </tr>
-                    @empty
-                        <tr><td colspan="4" class="text-center">Tidak ada data tersedia.</td></tr>
-                    @endforelse
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {{-- Analitik Penjualan (total) --}}
+
+    {{-- Analitik Penjualan (timeseries) --}}
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0"><i class="ti ti-chart-line fs-5 me-1"></i> Analitik Penjualan</h6>
@@ -64,7 +42,7 @@
                     <option value="ytd">Sejak Awal Tahun</option>
                 </select>
                 <select id="metricSelect" class="form-select form-select-sm">
-                    <option value="amount" selected>Omzet (Rp)</option>
+                    <option value="amount" selected>Penjualan (Rp)</option>
                     <option value="qty">Kuantitas (Qty)</option>
                 </select>
             </div>
@@ -72,7 +50,7 @@
 
         <div class="row text-center mb-3" id="kpiRow">
             <div class="col-12 col-md-4">
-                <div class="small text-muted">Total Omzet</div>
+                <div class="small text-muted">Total Penjualan</div>
                 <div class="fw-bold" id="kpiAmount">-</div>
             </div>
             <div class="col-12 col-md-4">
@@ -88,12 +66,12 @@
         <canvas id="salesLine"></canvas>
     </div>
 
-    {{-- Produk Terlaris (Bar Chart Horizontal) --}}
+    {{-- Produk Terlaris (Bar Chart Horizontal dengan gambar) --}}
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="mb-0">
+        <div class="d-flex align-items-center mb-3">
+            <h6 class="mb-0 w-100 text-center">
                 <i class="ti ti-bar-chart fs-5 me-1"></i>
-                <span id="topProdukTitle">Produk Terlaris dalam</span>
+                <span id="topProdukTitle" class="align-middle text-center"></span>
             </h6>
         </div>
         <div class="chart-box">
@@ -101,7 +79,7 @@
         </div>
     </div>
 
-        {{-- Stok Produk yang Hampir Habis --}}
+    {{-- Stok Produk yang Hampir Habis --}}
     <div class="bg-white rounded-2 shadow-sm p-4 mb-5">
         <h6 class="mb-3 text-center">
             <i class="ti ti-box fs-5 me-1"></i> Stok Produk yang Hampir Habis
@@ -171,8 +149,8 @@
                     @forelse ($productsExpiringSoon as $product)
                         @foreach ($product->stockHistories as $batch)
                             @php
-                                $exp     = \Carbon\Carbon::parse($batch->expired_date)->startOfDay();
-                                $today   = \Carbon\Carbon::now()->startOfDay();
+                                $exp      = \Carbon\Carbon::parse($batch->expired_date)->startOfDay();
+                                $today    = \Carbon\Carbon::now()->startOfDay();
                                 $daysLeft = $today->diffInDays($exp, false);
                             @endphp
                             <tr>
@@ -197,14 +175,8 @@
 
     {{-- CSS khusus chart --}}
     <style>
-        .chart-box {
-            height: 420px;
-            position: relative;
-        }
-        .chart-box canvas {
-            height: 100% !important;
-            width: 100% !important;
-        }
+        .chart-box { height: 420px; position: relative; }
+        .chart-box canvas { height: 100% !important; width: 100% !important; }
     </style>
 
     @push('scripts')
@@ -220,11 +192,9 @@
         let salesChart = null;
         let topChart   = null;
 
-        const humanRange = (v) => ({
-            '7d':'7 Hari','30d':'30 Hari','90d':'90 Hari','ytd':'Sejak Awal Tahun'
-        })[v] || 'Periode';
+        const humanRange = (v) => ({ '7d':'7 Hari','30d':'30 Hari','90d':'90 Hari','ytd':'Sejak Awal Tahun' }[v] || 'Periode');
 
-        // -------- Grafik Analitik Penjualan --------
+        // -------- Timeseries Penjualan --------
         async function loadSalesData() {
             const range  = rangeSel.value;
             const metric = metricSel.value;
@@ -240,9 +210,14 @@
             document.getElementById('kpiQty').textContent    = (json.kpi.total_qty ?? 0).toLocaleString('id-ID');
             document.getElementById('kpiOrders').textContent = (json.kpi.orders ?? 0).toLocaleString('id-ID');
 
+            // >>> Perubahan label MA 7 hari <<<
+            const maLabel = metric === 'qty'
+                ? 'Rata-rata penjualan qty dalam 7 hari'
+                : 'Rata-rata penjualan dalam 7 hari';
+
             const datasets = [
-                { label: metric==='qty' ? 'Qty Harian' : 'Omzet Harian', data: json.series.main, tension: 0.3, fill: false },
-                { label: 'Rata-rata 7 Hari', data: json.series.ma7, borderDash: [6,6], tension: 0.3, fill: false }
+                { label: metric==='qty' ? 'Qty Harian' : 'Penjualan Harian', data: json.series.main, tension: 0.3, fill: false },
+                { label: maLabel, data: json.series.ma7, borderDash: [6,6], tension: 0.3, fill: false }
             ];
 
             if (salesChart) salesChart.destroy();
@@ -258,6 +233,7 @@
                             callbacks: {
                                 label: (ctx) => {
                                     const v = ctx.parsed.y ?? 0;
+                                    // Tooltip pakai label dataset yang sudah diubah di atas
                                     return metric==='qty'
                                         ? `${ctx.dataset.label}: ${v.toLocaleString('id-ID')}`
                                         : `${ctx.dataset.label}: ` + new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR'}).format(v);
@@ -278,7 +254,37 @@
             });
         }
 
-        // -------- Grafik Top Produk (horizontal) --------
+        // -------- Plugin gambar di kiri label Y --------
+        const yAxisImages = {
+            id: 'yAxisImages',
+            afterDraw(chart, args, opts) {
+                const {ctx, scales: {y}} = chart;
+                if (!y) return;
+                ctx.save();
+                const size = opts.size || 22;
+                const x = (y.left - (opts.offset || 30));
+
+                const imgs = chart.$_rowImgs || [];
+                y.ticks.forEach((t, idx) => {
+                    const yPos = y.getPixelForTick(idx) - size/2;
+                    const img = imgs[idx];
+                    if (img && img.complete && img.naturalWidth) {
+                        try {
+                            ctx.save();
+                            const r = size/2;
+                            ctx.beginPath();
+                            ctx.arc(x + r, yPos + r, r, 0, Math.PI * 2);
+                            ctx.clip();
+                            ctx.drawImage(img, x, yPos, size, size);
+                            ctx.restore();
+                        } catch(e){}
+                    }
+                });
+                ctx.restore();
+            }
+        };
+
+        // -------- Grafik Top Produk (horizontal + gambar) --------
         async function loadTopProducts() {
             const range  = rangeSel.value;
             const metric = metricSel.value;
@@ -288,10 +294,18 @@
             });
             const json = await res.json();
 
-            document.getElementById('topProdukTitle').textContent = `Produk Terlaris dalam ${humanRange(range)}`;
+            const titleEl = document.getElementById('topProdukTitle');
+            titleEl.innerHTML = `Produk Terlaris dalam ${humanRange(range)}`;
 
             const labels = json.items.map(i => i.name);
             const data   = json.items.map(i => metric==='qty' ? i.total_qty : i.total_amt);
+            const images = json.items.map(i => i.image_url);
+
+            const imgObjs = images.map(src => {
+                const im = new Image();
+                im.src = src;
+                return im;
+            });
 
             if (topChart) { topChart.destroy(); topChart = null; }
 
@@ -300,7 +314,7 @@
                 data: {
                     labels,
                     datasets: [{
-                        label: metric==='qty' ? 'Qty' : 'Omzet',
+                        label: metric==='qty' ? 'Qty' : 'Penjualan',
                         data,
                         borderWidth: 1,
                         barPercentage: 0.7,
@@ -320,11 +334,13 @@
                                     const v = ctx.parsed.x ?? 0;
                                     return metric==='qty'
                                         ? `Qty: ${v.toLocaleString('id-ID')}`
-                                        : `Omzet: ` + new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR'}).format(v);
+                                        : `Penjualan: ` + new Intl.NumberFormat('id-ID',{style:'currency',currency:'IDR'}).format(v);
                                 }
                             }
-                        }
+                        },
+                        yAxisImages: { offset: 30, size: 22 }
                     },
+                    layout: { padding: { left: 8 } },
                     scales: {
                         x: {
                             beginAtZero: true,
@@ -337,6 +353,7 @@
                         },
                         y: {
                             ticks: {
+                                padding: 36,
                                 autoSkip: false,
                                 callback: (val, idx) => {
                                     const t = labels[idx] ?? '';
@@ -346,7 +363,15 @@
                             grid: { drawBorder: false }
                         }
                     }
-                }
+                },
+                plugins: [yAxisImages]
+            });
+
+            topChart.$_rowImgs = imgObjs;
+            topChart.update('none');
+
+            imgObjs.forEach(im => {
+                if (!im.complete) im.onload = () => topChart.update('none');
             });
         }
 
